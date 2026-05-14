@@ -49,12 +49,10 @@ function excelTextFormula(value: string): string {
   return `="${escaped}"`;
 }
 
-/** Dotted digits only (科目代码); excludes text headers and dashed dates. */
+/** Dotted digits only (科目代码); excludes text headers and non-code text. */
 export function shouldNormalizeColA(s: string): boolean {
   const t = s.trim();
   if (!t || !/^[\d.]+$/.test(t)) return false;
-  // 期间 / dotted calendar: 2005.1, 2023.10.10
-  if (/^(19|20)\d{2}\.\d{1,2}(\.\d{1,2})?$/.test(t)) return false;
   return true;
 }
 
@@ -283,7 +281,8 @@ async function main(): Promise<number> {
         }
       }
     }
-    if (args.excelTextCols.size > 0) {
+    const isOutputHeader = nRows === 0;
+    if (!isOutputHeader && args.excelTextCols.size > 0) {
       outRow = outRow.map((v, i) =>
         args.excelTextCols.has(i) ? excelTextFormula(v) : v,
       );

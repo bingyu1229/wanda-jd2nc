@@ -1,25 +1,3 @@
-/**
- * Convert Kingdee-style HTML table export (.htm) to CSV without changing cell text.
- *
- * - Reads GB2312/GBK HTML (default encoding gb18030).
- * - Writes every field quoted (Excel-style); no numeric parsing (preserves 2023.10.10, etc.).
- * - Streams line-by-line for large files.
- * - Drops the first table row (Kingdee placeholder headers 第1列…第N列).
- * - Drops column C (0-based index 2, 助记码) on every output row.
- * - Column A (instruction section 2): (2.1–2.2) dotted alphanumeric codes shaped to 4.(3)* — first segment
- *   width 4 (right-pad; overflow carries into next segment); each later dot-separated segment
- *   becomes one or more 3-character groups (per-segment; last chunk right-padded with zeroes). Pure 4-character
- *   codes stay unchanged (no trailing groups). (2.4) remove all "." so "1234.567.890" →
- *   "1234567890".
- *
- * Also writes 科目导入.csv next to the output CSV:
- * - A1 is the Kingdee import head marker; later A cells are blank.
- * - Source CSV columns A-D are copied to columns B-E.
- * - Column F is 有效期; data rows use 2000-01.
- *
- * Run: npx tsx htm_table_to_csv.ts <input.htm> [-o out.csv] [--encoding gb18030] [--utf8-bom] [--excel-text-cols 0,1] [--no-normalize-col-a]
- */
-
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
@@ -127,20 +105,30 @@ function makeUniqueDottedCode(
   const previousCount = duplicateBaseCounts.get(dotted) ?? 0;
   duplicateBaseCounts.set(dotted, previousCount + 1);
 
-  if (previousCount === 0 && !usedDottedCodes.has(dotted)) {
-    usedDottedCodes.add(dotted);
-    return dotted;
-  }
-
-  let suffix = Math.max(previousCount, 1);
+  let suffix = previousCount + 1;
   while (true) {
-    const candidate = `${dotted}.${String(suffix).padStart(3, "0")}`;
+    const alphaSuffix = alphaSequence(suffix);
+    const candidate =
+      dotted.length > alphaSuffix.length
+        ? dotted.slice(0, -alphaSuffix.length) + alphaSuffix
+        : alphaSuffix;
     if (!usedDottedCodes.has(candidate)) {
       usedDottedCodes.add(candidate);
       return candidate;
     }
     suffix++;
   }
+}
+
+function alphaSequence(n: number): string {
+  let s = "";
+  let current = n;
+  while (current > 0) {
+    current--;
+    s = String.fromCharCode(97 + (current % 26)) + s;
+    current = Math.floor(current / 26);
+  }
+  return s;
 }
 
 function appendCodeToDuplicateNames(rows: string[][]): void {
@@ -164,6 +152,7 @@ function appendCodeToDuplicateNames(rows: string[][]): void {
 
 /** Kingdee export: row 1 is 第1列… placeholders; column index 2 is 助记码 (omitted from CSV). */
 const DROP_COL_INDEX = 2;
+const DEFAULT_INPUT_FILE_NAME = "科目.htm";
 const SUBJECT_IMPORT_FILE_NAME = "科目导入.csv";
 const SUBJECT_IMPORT_HEAD =
   "bd_accsubj_$head,subjcode,subjname,pk_subjtype,balanorient,period,outflag";
@@ -223,7 +212,6 @@ async function* htmTableRows(
 function parseArgs(argv: string[]) {
   const out: {
     input?: string;
-    output?: string;
     encoding: string;
     utf8Bom: boolean;
     excelTextCols: Set<number>;
@@ -241,10 +229,6 @@ function parseArgs(argv: string[]) {
     const a = argv[i];
     if (a === "-h" || a === "--help") {
       out.help = true;
-      continue;
-    }
-    if (a === "-o" || a === "--output") {
-      out.output = argv[++i];
       continue;
     }
     if (a === "--encoding") {
@@ -278,30 +262,45 @@ function parseArgs(argv: string[]) {
 }
 
 function printHelp(): void {
-  console.error(`Usage: npx tsx htm_table_to_csv.ts <input.htm> [options]
+  console.error(`Usage: npx tsx step_A.ts [input.htm] [options]
 
 Options:
-  -o, --output <file>     Output CSV (default: input basename + .csv)
+  input.htm               Optional single input file. When omitted, recursively processes every ${DEFAULT_INPUT_FILE_NAME} under the current folder.
   --encoding <name>       Input encoding (default: gb18030)
   --utf8-bom              Write UTF-8 with BOM for Excel on Windows
   --no-normalize-col-a    Skip column A normalization (instruction section 2, 2.1–2.4)
   --excel-text-cols <n>   Comma-separated 0-based column indexes as Excel text (="...")
 
-Also writes ${SUBJECT_IMPORT_FILE_NAME} next to the output CSV.
+Writes a.csv and ${SUBJECT_IMPORT_FILE_NAME} next to each input file.
 `);
 }
 
-async function main(): Promise<number> {
-  const args = parseArgs(process.argv.slice(2));
-  if (args.help || !args.input) {
-    printHelp();
-    return args.help ? 0 : 1;
+async function findDefaultInputFiles(rootDir: string): Promise<string[]> {
+  const found: string[] = [];
+
+  async function walk(dir: string): Promise<void> {
+    const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name === ".git" || entry.name === "node_modules") continue;
+
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await walk(fullPath);
+      } else if (entry.isFile() && entry.name === DEFAULT_INPUT_FILE_NAME) {
+        found.push(fullPath);
+      }
+    }
   }
 
-  const inPath = path.resolve(args.input);
-  const outPath = args.output
-    ? path.resolve(args.output)
-    : inPath.replace(/\.htm$/i, ".csv");
+  await walk(rootDir);
+  return found.sort((a, b) => a.localeCompare(b));
+}
+
+async function processInputFile(
+  inPath: string,
+  args: ReturnType<typeof parseArgs>,
+): Promise<number> {
+  const outPath = path.join(path.dirname(inPath), "a.csv");
   const subjectImportPath = path.join(
     path.dirname(outPath),
     SUBJECT_IMPORT_FILE_NAME,
@@ -330,6 +329,9 @@ async function main(): Promise<number> {
 
     let outRow = dropMnemonicColumn(row);
     const isOutputHeader = rows.length === 0;
+    const originalCode = outRow[0] ?? "";
+    outRow = outRow.slice();
+    outRow.push(isOutputHeader ? "原科目代码" : originalCode);
     if (!isOutputHeader && args.normalizeColA && outRow.length > 0) {
       const a = outRow[0] ?? "";
       if (shouldNormalizeColA(a)) {
@@ -396,6 +398,45 @@ async function main(): Promise<number> {
 
   console.error("Wrote", rows.length, "rows to", outPath);
   console.error("Wrote", rows.length, "rows to", subjectImportPath);
+  return rows.length;
+}
+
+async function main(): Promise<number> {
+  const args = parseArgs(process.argv.slice(2));
+  if (args.help) {
+    printHelp();
+    return 0;
+  }
+
+  if (!iconv.encodingExists(args.encoding)) {
+    console.error("Unknown encoding:", args.encoding);
+    return 2;
+  }
+
+  const inputFiles = args.input
+    ? [path.resolve(args.input)]
+    : await findDefaultInputFiles(process.cwd());
+
+  if (inputFiles.length === 0) {
+    console.error(
+      `No ${DEFAULT_INPUT_FILE_NAME} files found under ${process.cwd()}`,
+    );
+    return 1;
+  }
+
+  let totalRows = 0;
+  for (const inPath of inputFiles) {
+    console.error("Processing", inPath);
+    totalRows += await processInputFile(inPath, args);
+  }
+
+  console.error(
+    "Processed",
+    inputFiles.length,
+    "folder(s),",
+    totalRows,
+    "CSV row(s).",
+  );
   return 0;
 }
 

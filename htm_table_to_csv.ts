@@ -6,9 +6,9 @@
  * - Streams line-by-line for large files.
  * - Drops the first table row (Kingdee placeholder headers 第1列…第N列).
  * - Drops column C (0-based index 2, 助记码) on every output row.
- * - Column A (instruction section 2): (2.1–2.2) dotted codes shaped to 4.(3)* — first segment
+ * - Column A (instruction section 2): (2.1–2.2) dotted alphanumeric codes shaped to 4.(3)* — first segment
  *   width 4 (right-pad; overflow carries into next segment); each later dot-separated segment
- *   becomes one or more 3-digit groups (per-segment; last chunk right-padded). Pure 4-digit
+ *   becomes one or more 3-character groups (per-segment; last chunk right-padded with zeroes). Pure 4-character
  *   codes stay unchanged (no trailing groups). (2.4) remove all "." so "1234.567.890" →
  *   "1234567890".
  *
@@ -54,10 +54,10 @@ function excelTextFormula(value: string): string {
   return `="${escaped}"`;
 }
 
-/** Dotted digits only (科目代码); excludes text headers and non-code text. */
+/** Dotted alphanumeric account codes only; excludes text headers and non-code text. */
 export function shouldNormalizeColA(s: string): boolean {
   const t = s.trim();
-  if (!t || !/^[\d.]+$/.test(t)) return false;
+  if (!t || !/^[A-Za-z0-9.]+$/.test(t)) return false;
   return true;
 }
 
@@ -66,11 +66,12 @@ function stripIntegerDecimalArtifact(s: string): string {
 }
 
 /**
- * Shape column A to 4.(3)*: first segment normalized to 4 digits (right-pad); overflow
+ * Shape column A to 4.(3)*: first segment normalized to 4 characters (right-pad); overflow
  * digits from a long first segment are prefixed onto the next dot-separated segment.
- * Each segment after the first is expanded independently into 3-digit chunks (left to right,
+ * Each segment after the first is expanded independently into 3-character chunks (left to right,
  * last chunk right-padded). No tail groups if there are no segments after the first
- * (e.g. "1001" stays "1001"). Example: "1151.13.01" → "1151.130.010" (not "1151.130.100").
+ * (e.g. "1001" stays "1001"). Example: "1151.13.01" → "1151.130.010" (not "1151.130.100");
+ * "2131.003.HA11" → "2131.003.HA1.100".
  */
 function normalizeColADottedCode(raw: string): string {
   const t = stripIntegerDecimalArtifact(raw.trim()).replace(/\.+$/, "");

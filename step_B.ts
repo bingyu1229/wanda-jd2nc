@@ -333,22 +333,17 @@ function cleanSubjectNames(rows: string[][]): void {
 }
 
 function auxiliaryValueFromSubjectName(subjectName: string): string {
-  const marker = "-";
+  const marker = " - ";
   const markerIndex = subjectName.indexOf(marker);
-  if (markerIndex < 0) return "";
+  if (markerIndex < 0) return subjectName;
   return subjectName.slice(markerIndex + marker.length).trim();
 }
 
 function uniqueAuxiliaryValues(rows: string[][]): string[] {
-  const seen = new Set<string>();
   const values: string[] = [];
   for (let i = 1; i < rows.length; i++) {
-    const value = auxiliaryValueFromSubjectName(
-      rows[i][COL_SUBJECT_NAME] ?? "",
-    );
-    if (!value || seen.has(value)) continue;
-    seen.add(value);
-    values.push(value);
+    const val = auxiliaryValueFromSubjectName(rows[i][COL_SUBJECT_NAME] ?? "");
+    values.push(val);
   }
   return values;
 }
@@ -416,6 +411,7 @@ async function processInputFile(
   });
 
   const rows: string[][] = [];
+  const freeValues: string[] = [];
   const usedDottedCodes = new Set<string>();
   const duplicateBaseCounts = new Map<string, number>();
 
@@ -426,29 +422,26 @@ async function processInputFile(
 
     let outRow = row.slice();
     const isOutputHeader = rows.length === 0;
+
+    if (!isOutputHeader) {
+      freeValues.push(auxiliaryValueFromSubjectName(outRow[COL_SUBJECT_NAME] ?? ""));
+    }
+
     if (!isOutputHeader && args.normalizeColE && outRow.length > COL_SUBJECT_CODE) {
       const code = outRow[COL_SUBJECT_CODE] ?? "";
       if (shouldNormalizeCode(code)) {
         const dotted = normalizeDottedCode(code);
-        const uniqueDotted = makeUniqueDottedCode(
-          dotted,
-          usedDottedCodes,
-          duplicateBaseCounts,
-        );
-        outRow = outRow.slice();
+        const uniqueDotted = makeUniqueDottedCode(dotted, usedDottedCodes, duplicateBaseCounts);
         outRow[COL_SUBJECT_CODE] = flattenCode(uniqueDotted);
       }
     }
-
     rows.push(outRow);
-    if (rows.length % 50000 === 0) {
-      console.error(rows.length, "rows...");
-    }
   }
 
   fillDownColumns(rows, [COL_DATE, COL_PERIOD, COL_VOUCHER_NO, COL_BUSINESS_DATE]);
   fillEntryNumbers(rows);
   replaceQuotedZeroes(rows);
+  
   cleanSubjectNames(rows);
 
   const outputRows = rows.map((row, rowIndex) => {
@@ -458,19 +451,11 @@ async function processInputFile(
     );
   });
 
-  await writeLines(
-    outPath,
-    outputRows.map((row) => csvQuoteAllRow(row)),
-    args.utf8Bom,
-  );
+  await writeLines(outPath, outputRows.map((row) => csvQuoteAllRow(row)), args.utf8Bom);
 
-  const freeValues = uniqueAuxiliaryValues(rows);
   await writeLines(
     freeValuePath,
-    [
-      csvRow(FREEVALUE_HEADER),
-      ...freeValueRows(freeValues).map((row) => csvRow(row)),
-    ],
+    [csvRow(FREEVALUE_HEADER), ...freeValueRows(freeValues).map((row) => csvRow(row))],
     args.utf8Bom,
   );
 

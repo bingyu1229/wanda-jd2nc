@@ -43,14 +43,6 @@ function stripIntegerDecimalArtifact(s: string): string {
   return /^\d+\.0$/.test(s) ? s.slice(0, -2) : s;
 }
 
-/**
- * Shape column A to 4.(3)*: first segment normalized to 4 characters (right-pad); overflow
- * digits from a long first segment are prefixed onto the next dot-separated segment.
- * Each segment after the first is expanded independently into 3-character chunks (left to right,
- * last chunk right-padded). No tail groups if there are no segments after the first
- * (e.g. "1001" stays "1001"). Example: "1151.13.01" → "1151.130.010" (not "1151.130.100");
- * "2131.003.HA11" → "2131.003.HA1.100".
- */
 function normalizeColADottedCode(raw: string): string {
   const t = stripIntegerDecimalArtifact(raw.trim()).replace(/\.+$/, "");
   if (!t) return raw;
@@ -102,20 +94,29 @@ function makeUniqueDottedCode(
   usedDottedCodes: Set<string>,
   duplicateBaseCounts: Map<string, number>,
 ): string {
-  const previousCount = duplicateBaseCounts.get(dotted) ?? 0;
-  duplicateBaseCounts.set(dotted, previousCount + 1);
+  // 第一次出现：直接保留原值
+  if (!usedDottedCodes.has(dotted)) {
+    usedDottedCodes.add(dotted);
+    duplicateBaseCounts.set(dotted, 0);
+    return dotted;
+  }
 
-  let suffix = previousCount + 1;
+  let suffix = (duplicateBaseCounts.get(dotted) ?? 0) + 1;
+
   while (true) {
     const alphaSuffix = alphaSequence(suffix);
+
     const candidate =
       dotted.length > alphaSuffix.length
         ? dotted.slice(0, -alphaSuffix.length) + alphaSuffix
         : alphaSuffix;
+
     if (!usedDottedCodes.has(candidate)) {
       usedDottedCodes.add(candidate);
+      duplicateBaseCounts.set(dotted, suffix);
       return candidate;
     }
+
     suffix++;
   }
 }
@@ -129,25 +130,6 @@ function alphaSequence(n: number): string {
     current = Math.floor(current / 26);
   }
   return s;
-}
-
-function appendCodeToDuplicateNames(rows: string[][]): void {
-  const nameCounts = new Map<string, number>();
-  for (let i = 1; i < rows.length; i++) {
-    const name = rows[i]?.[1] ?? "";
-    if (!name) continue;
-    nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1);
-  }
-
-  for (let i = 1; i < rows.length; i++) {
-    const row = rows[i];
-    if (!row) continue;
-    const code = row[0] ?? "";
-    const name = row[1] ?? "";
-    if (name && (nameCounts.get(name) ?? 0) > 1) {
-      row[1] = `${name}${code}`;
-    }
-  }
 }
 
 /** Kingdee export: row 1 is 第1列… placeholders; column index 2 is 助记码 (omitted from CSV). */
@@ -296,20 +278,62 @@ async function findDefaultInputFiles(rootDir: string): Promise<string[]> {
   return found.sort((a, b) => a.localeCompare(b));
 }
 
-async function processInputFile(
+/**
+ * Phase 1: Lightweight scan to count name frequencies.
+ * Only collects {name -> count}, not full rows. Memory O(unique names).
+ */
+async function scanNameFrequencies(
+  inPath: string,
+  encoding: string,
+): Promise<Map<string, number>> {
+  const readStream = fs.createReadStream(inPath);
+  const decodeStream = iconv.decodeStream(encoding);
+  const lineStream = readline.createInterface({
+    input: readStream.pipe(decodeStream),
+    crlfDelay: Number.POSITIVE_INFINITY,
+  });
+
+  const nameFreq = new Map<string, number>();
+  let htmTableRowIndex = 0;
+
+  for await (const row of htmTableRows(lineStream)) {
+    htmTableRowIndex++;
+    if (htmTableRowIndex === 1) continue; // Skip HTML header row
+
+    const outRow = dropMnemonicColumn(row);
+    const name = outRow[1] ?? "";
+    if (name) {
+      nameFreq.set(name, (nameFreq.get(name) ?? 0) + 1);
+    }
+  }
+
+  return nameFreq;
+}
+
+function subjectImportRowFromCsvRow(row: string[], isHeader: boolean): string[] {
+  const copied = row.slice(0, 4);
+  while (copied.length < 4) copied.push("");
+  return [
+    isHeader ? SUBJECT_IMPORT_HEAD : "",
+    ...copied,
+    isHeader ? SUBJECT_IMPORT_PERIOD_HEADER : SUBJECT_IMPORT_PERIOD_VALUE,
+  ];
+}
+
+/**
+ * Phase 2: Stream processing — read, transform, write immediately.
+ * No full table stored in memory.
+ */
+async function processInputFileStreaming(
   inPath: string,
   args: ReturnType<typeof parseArgs>,
+  nameFreq: Map<string, number>,
 ): Promise<number> {
   const outPath = path.join(path.dirname(inPath), "a.csv");
   const subjectImportPath = path.join(
     path.dirname(outPath),
     SUBJECT_IMPORT_FILE_NAME,
   );
-
-  if (!iconv.encodingExists(args.encoding)) {
-    console.error("Unknown encoding:", args.encoding);
-    return 2;
-  }
 
   const readStream = fs.createReadStream(inPath);
   const decodeStream = iconv.decodeStream(args.encoding);
@@ -318,20 +342,36 @@ async function processInputFile(
     crlfDelay: Number.POSITIVE_INFINITY,
   });
 
-  const rows: string[][] = [];
+  const writeStream = fs.createWriteStream(outPath, { encoding: "utf8" });
+  const subjectImportWriteStream = fs.createWriteStream(subjectImportPath, {
+    encoding: "utf8",
+  });
+
+  if (args.utf8Bom) {
+    writeStream.write("\uFEFF");
+    subjectImportWriteStream.write("\uFEFF");
+  }
+
+  // State for code deduplication (must persist across rows)
   const usedDottedCodes = new Set<string>();
   const duplicateBaseCounts = new Map<string, number>();
 
-  let htmTableRowIndex = 0;
+  let rowCount = 0;
+  let dataRowCount = 0;
+
   for await (const row of htmTableRows(lineStream)) {
-    htmTableRowIndex++;
-    if (htmTableRowIndex === 1) continue;
+    rowCount++;
+    if (rowCount === 1) continue; // Skip HTML placeholder header
 
     let outRow = dropMnemonicColumn(row);
-    const isOutputHeader = rows.length === 0;
+    const isOutputHeader = dataRowCount === 0;
     const originalCode = outRow[0] ?? "";
+
+    // 2.1: Append original code as new last column
     outRow = outRow.slice();
     outRow.push(isOutputHeader ? "原科目代码" : originalCode);
+
+    // 2.2–2.4: Normalize column A (account code)
     if (!isOutputHeader && args.normalizeColA && outRow.length > 0) {
       const a = outRow[0] ?? "";
       if (shouldNormalizeColA(a)) {
@@ -343,48 +383,47 @@ async function processInputFile(
         );
         const normalized = flattenColAAccountCode(uniqueDotted);
         if (normalized !== a) {
-          outRow = outRow.slice();
           outRow[0] = normalized;
         }
       }
     }
-    rows.push(outRow);
-    if (rows.length % 50000 === 0) {
-      console.error(rows.length, "rows...");
+
+    // 3: Append code to duplicate names (using pre-scanned frequency map)
+    if (!isOutputHeader) {
+      const name = outRow[1] ?? "";
+      if (name && (nameFreq.get(name) ?? 0) > 1) {
+        outRow[1] = `${name}${outRow[0]}`;
+      }
     }
-  }
 
-  appendCodeToDuplicateNames(rows);
-
-  const writeStream = fs.createWriteStream(outPath, { encoding: "utf8" });
-  const subjectImportWriteStream = fs.createWriteStream(subjectImportPath, {
-    encoding: "utf8",
-  });
-  if (args.utf8Bom) {
-    writeStream.write("\uFEFF");
-    subjectImportWriteStream.write("\uFEFF");
-  }
-
-  for (let i = 0; i < rows.length; i++) {
-    let outRow = rows[i] ?? [];
-    const isOutputHeader = i === 0;
+    // Apply Excel text formula if requested
     if (!isOutputHeader && args.excelTextCols.size > 0) {
       outRow = outRow.map((v, i) =>
         args.excelTextCols.has(i) ? excelTextFormula(v) : v,
       );
     }
+
+    // Write to a.csv
     const lineOut = csvQuoteAllRow(outRow);
     if (!writeStream.write(lineOut)) {
       await once(writeStream, "drain");
     }
+
+    // Write to 科目导入.csv
     const subjectImportLineOut = csvQuoteAllRow(
       subjectImportRowFromCsvRow(outRow, isOutputHeader),
     );
     if (!subjectImportWriteStream.write(subjectImportLineOut)) {
       await once(subjectImportWriteStream, "drain");
     }
+
+    dataRowCount++;
+    if (dataRowCount % 50000 === 0) {
+      console.error(dataRowCount, "rows processed...");
+    }
   }
 
+  // Close streams
   await new Promise<void>((resolve, reject) => {
     writeStream.end((err: NodeJS.ErrnoException | null) =>
       err ? reject(err) : resolve(),
@@ -396,9 +435,20 @@ async function processInputFile(
     );
   });
 
-  console.error("Wrote", rows.length, "rows to", outPath);
-  console.error("Wrote", rows.length, "rows to", subjectImportPath);
-  return rows.length;
+  console.error("Wrote", dataRowCount, "rows to", outPath);
+  console.error("Wrote", dataRowCount, "rows to", subjectImportPath);
+  return dataRowCount;
+}
+
+async function processInputFile(
+  inPath: string,
+  args: ReturnType<typeof parseArgs>,
+): Promise<number> {
+  // Phase 1: Scan name frequencies (lightweight, memory-efficient)
+  const nameFreq = await scanNameFrequencies(inPath, args.encoding);
+
+  // Phase 2: Stream processing with the frequency map
+  return processInputFileStreaming(inPath, args, nameFreq);
 }
 
 async function main(): Promise<number> {
@@ -448,14 +498,4 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       process.exit(1);
     },
   );
-}
-
-function subjectImportRowFromCsvRow(row: string[], isHeader: boolean): string[] {
-  const copied = row.slice(0, 4);
-  while (copied.length < 4) copied.push("");
-  return [
-    isHeader ? SUBJECT_IMPORT_HEAD : "",
-    ...copied,
-    isHeader ? SUBJECT_IMPORT_PERIOD_HEADER : SUBJECT_IMPORT_PERIOD_VALUE,
-  ];
 }

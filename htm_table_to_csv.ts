@@ -119,6 +119,49 @@ export function normalizeColAAccountCode(raw: string): string {
   return flattenColAAccountCode(normalizeColADottedCode(raw));
 }
 
+function makeUniqueDottedCode(
+  dotted: string,
+  usedDottedCodes: Set<string>,
+  duplicateBaseCounts: Map<string, number>,
+): string {
+  const previousCount = duplicateBaseCounts.get(dotted) ?? 0;
+  duplicateBaseCounts.set(dotted, previousCount + 1);
+
+  if (previousCount === 0 && !usedDottedCodes.has(dotted)) {
+    usedDottedCodes.add(dotted);
+    return dotted;
+  }
+
+  let suffix = Math.max(previousCount, 1);
+  while (true) {
+    const candidate = `${dotted}.${String(suffix).padStart(3, "0")}`;
+    if (!usedDottedCodes.has(candidate)) {
+      usedDottedCodes.add(candidate);
+      return candidate;
+    }
+    suffix++;
+  }
+}
+
+function appendCodeToDuplicateNames(rows: string[][]): void {
+  const nameCounts = new Map<string, number>();
+  for (let i = 1; i < rows.length; i++) {
+    const name = rows[i]?.[1] ?? "";
+    if (!name) continue;
+    nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1);
+  }
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row) continue;
+    const code = row[0] ?? "";
+    const name = row[1] ?? "";
+    if (name && (nameCounts.get(name) ?? 0) > 1) {
+      row[1] = `${name}${code}`;
+    }
+  }
+}
+
 /** Kingdee export: row 1 is 第1列… placeholders; column index 2 is 助记码 (omitted from CSV). */
 const DROP_COL_INDEX = 2;
 const SUBJECT_IMPORT_FILE_NAME = "科目导入.csv";
@@ -276,6 +319,41 @@ async function main(): Promise<number> {
     crlfDelay: Number.POSITIVE_INFINITY,
   });
 
+  const rows: string[][] = [];
+  const usedDottedCodes = new Set<string>();
+  const duplicateBaseCounts = new Map<string, number>();
+
+  let htmTableRowIndex = 0;
+  for await (const row of htmTableRows(lineStream)) {
+    htmTableRowIndex++;
+    if (htmTableRowIndex === 1) continue;
+
+    let outRow = dropMnemonicColumn(row);
+    const isOutputHeader = rows.length === 0;
+    if (!isOutputHeader && args.normalizeColA && outRow.length > 0) {
+      const a = outRow[0] ?? "";
+      if (shouldNormalizeColA(a)) {
+        const dotted = normalizeColADottedCode(a);
+        const uniqueDotted = makeUniqueDottedCode(
+          dotted,
+          usedDottedCodes,
+          duplicateBaseCounts,
+        );
+        const normalized = flattenColAAccountCode(uniqueDotted);
+        if (normalized !== a) {
+          outRow = outRow.slice();
+          outRow[0] = normalized;
+        }
+      }
+    }
+    rows.push(outRow);
+    if (rows.length % 50000 === 0) {
+      console.error(rows.length, "rows...");
+    }
+  }
+
+  appendCodeToDuplicateNames(rows);
+
   const writeStream = fs.createWriteStream(outPath, { encoding: "utf8" });
   const subjectImportWriteStream = fs.createWriteStream(subjectImportPath, {
     encoding: "utf8",
@@ -285,24 +363,9 @@ async function main(): Promise<number> {
     subjectImportWriteStream.write("\uFEFF");
   }
 
-  let nRows = 0;
-  let htmTableRowIndex = 0;
-  for await (const row of htmTableRows(lineStream)) {
-    htmTableRowIndex++;
-    if (htmTableRowIndex === 1) continue;
-
-    let outRow = dropMnemonicColumn(row);
-    if (args.normalizeColA && outRow.length > 0) {
-      const a = outRow[0] ?? "";
-      if (shouldNormalizeColA(a)) {
-        const normalized = normalizeColAAccountCode(a);
-        if (normalized !== a) {
-          outRow = outRow.slice();
-          outRow[0] = normalized;
-        }
-      }
-    }
-    const isOutputHeader = nRows === 0;
+  for (let i = 0; i < rows.length; i++) {
+    let outRow = rows[i] ?? [];
+    const isOutputHeader = i === 0;
     if (!isOutputHeader && args.excelTextCols.size > 0) {
       outRow = outRow.map((v, i) =>
         args.excelTextCols.has(i) ? excelTextFormula(v) : v,
@@ -318,10 +381,6 @@ async function main(): Promise<number> {
     if (!subjectImportWriteStream.write(subjectImportLineOut)) {
       await once(subjectImportWriteStream, "drain");
     }
-    nRows++;
-    if (nRows % 50000 === 0) {
-      console.error(nRows, "rows...");
-    }
   }
 
   await new Promise<void>((resolve, reject) => {
@@ -335,8 +394,8 @@ async function main(): Promise<number> {
     );
   });
 
-  console.error("Wrote", nRows, "rows to", outPath);
-  console.error("Wrote", nRows, "rows to", subjectImportPath);
+  console.error("Wrote", rows.length, "rows to", outPath);
+  console.error("Wrote", rows.length, "rows to", subjectImportPath);
   return 0;
 }
 

@@ -12,6 +12,11 @@
  *   codes stay unchanged (no trailing groups). (2.4) remove all "." so "1234.567.890" →
  *   "1234567890".
  *
+ * Also writes 科目导入.csv next to the output CSV:
+ * - A1 is the Kingdee import head marker; later A cells are blank.
+ * - Source CSV columns A-D are copied to columns B-E.
+ * - Column F is 有效期; data rows use 2000-01.
+ *
  * Run: npx tsx htm_table_to_csv.ts <input.htm> [-o out.csv] [--encoding gb18030] [--utf8-bom] [--excel-text-cols 0,1] [--no-normalize-col-a]
  */
 
@@ -115,6 +120,11 @@ export function normalizeColAAccountCode(raw: string): string {
 
 /** Kingdee export: row 1 is 第1列… placeholders; column index 2 is 助记码 (omitted from CSV). */
 const DROP_COL_INDEX = 2;
+const SUBJECT_IMPORT_FILE_NAME = "科目导入.csv";
+const SUBJECT_IMPORT_HEAD =
+  "bd_accsubj_$head,subjcode,subjname,pk_subjtype,balanorient,period,outflag";
+const SUBJECT_IMPORT_PERIOD_HEADER = "有效期";
+const SUBJECT_IMPORT_PERIOD_VALUE = "2000-01";
 
 function dropMnemonicColumn(row: string[]): string[] {
   return row.filter((_, i) => i !== DROP_COL_INDEX);
@@ -232,6 +242,8 @@ Options:
   --utf8-bom              Write UTF-8 with BOM for Excel on Windows
   --no-normalize-col-a    Skip column A normalization (instruction section 2, 2.1–2.4)
   --excel-text-cols <n>   Comma-separated 0-based column indexes as Excel text (="...")
+
+Also writes ${SUBJECT_IMPORT_FILE_NAME} next to the output CSV.
 `);
 }
 
@@ -246,6 +258,10 @@ async function main(): Promise<number> {
   const outPath = args.output
     ? path.resolve(args.output)
     : inPath.replace(/\.htm$/i, ".csv");
+  const subjectImportPath = path.join(
+    path.dirname(outPath),
+    SUBJECT_IMPORT_FILE_NAME,
+  );
 
   if (!iconv.encodingExists(args.encoding)) {
     console.error("Unknown encoding:", args.encoding);
@@ -260,8 +276,12 @@ async function main(): Promise<number> {
   });
 
   const writeStream = fs.createWriteStream(outPath, { encoding: "utf8" });
+  const subjectImportWriteStream = fs.createWriteStream(subjectImportPath, {
+    encoding: "utf8",
+  });
   if (args.utf8Bom) {
     writeStream.write("\uFEFF");
+    subjectImportWriteStream.write("\uFEFF");
   }
 
   let nRows = 0;
@@ -291,6 +311,12 @@ async function main(): Promise<number> {
     if (!writeStream.write(lineOut)) {
       await once(writeStream, "drain");
     }
+    const subjectImportLineOut = csvQuoteAllRow(
+      subjectImportRowFromCsvRow(outRow, isOutputHeader),
+    );
+    if (!subjectImportWriteStream.write(subjectImportLineOut)) {
+      await once(subjectImportWriteStream, "drain");
+    }
     nRows++;
     if (nRows % 50000 === 0) {
       console.error(nRows, "rows...");
@@ -302,8 +328,14 @@ async function main(): Promise<number> {
       err ? reject(err) : resolve(),
     );
   });
+  await new Promise<void>((resolve, reject) => {
+    subjectImportWriteStream.end((err: NodeJS.ErrnoException | null) =>
+      err ? reject(err) : resolve(),
+    );
+  });
 
   console.error("Wrote", nRows, "rows to", outPath);
+  console.error("Wrote", nRows, "rows to", subjectImportPath);
   return 0;
 }
 
@@ -315,4 +347,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       process.exit(1);
     },
   );
+}
+
+function subjectImportRowFromCsvRow(row: string[], isHeader: boolean): string[] {
+  const copied = row.slice(0, 4);
+  while (copied.length < 4) copied.push("");
+  return [
+    isHeader ? SUBJECT_IMPORT_HEAD : "",
+    ...copied,
+    isHeader ? SUBJECT_IMPORT_PERIOD_HEADER : SUBJECT_IMPORT_PERIOD_VALUE,
+  ];
 }

@@ -316,11 +316,23 @@ function fillEntryNumbers(rows: string[][]): void {
   }
 }
 
-function replaceQuotedZeroes(rows: string[][]): void {
+function normalizeAmount(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return value;
+
+  const withoutTextMarker = trimmed.startsWith("'") ? trimmed.slice(1) : trimmed;
+  const normalizedNumberText = withoutTextMarker.replace(/,/g, "");
+  const amount = Number(normalizedNumberText);
+  if (!Number.isFinite(amount)) return withoutTextMarker;
+
+  return Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
+}
+
+function cleanAmountColumns(rows: string[][]): void {
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     for (const col of [COL_ORIGINAL_AMOUNT, COL_DEBIT, COL_CREDIT]) {
-      if (row[col] === "'0") row[col] = "0";
+      row[col] = normalizeAmount(row[col] ?? "");
     }
   }
 }
@@ -440,7 +452,7 @@ async function processInputFile(
 
   fillDownColumns(rows, [COL_DATE, COL_PERIOD, COL_VOUCHER_NO, COL_BUSINESS_DATE]);
   fillEntryNumbers(rows);
-  replaceQuotedZeroes(rows);
+  cleanAmountColumns(rows);
   
   cleanSubjectNames(rows);
 

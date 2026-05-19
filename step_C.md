@@ -9,7 +9,7 @@
 npx tsx test/step_C.ts
 ```
 
-- 默认输入：从当前执行目录开始，递归查找同时包含 `b.csv`、`GL_FREEVALUE.csv` 和 `pk.csv` 的目录。
+- 默认输入：从当前执行目录开始，递归查找同时包含 `b.csv`、`GL_FREEVALUE.csv`、`pk.csv` 和 `user.csv` 的目录。
 - 调试单个目录时，可以传入目录路径：
 
 ```bash
@@ -33,7 +33,8 @@ npx tsx test/step_C.ts "test/015.001/b.csv"
 ## 2. 生成 `GL_DETAIL.csv`
 
 `GL_DETAIL.csv` 的数据行数与 `b.csv` 的数据行数保持一致。
-`GL_DETAIL.csv` 会用 `b.csv` 的 E 列 `科目代码` 匹配 `pk.csv` 的 `SUBJCODE`，再取同一行的 `PK_ACCSUBJ` 填充明细表。`PK_CORP`、`PK_GLORG`、`PK_GLORGBOOK` 使用 `pk.csv` 第一条数据行中的固定值；`PK_GLBOOK` 固定为 `0001A9100000000JCNSC`。
+`GL_DETAIL.csv` 会用 `b.csv` 的 E 列 `科目代码` 匹配 `pk.csv` 的 `SUBJCODE`，再取同一行的 `PK_ACCSUBJ` 填充明细表。`PK_CORP`、`PK_GLBOOK`、`PK_GLORG`、`PK_GLORGBOOK` 使用 `pk.csv` 第一条数据行中的固定值；若 `pk.csv` 没有 `PK_GLBOOK` 列，则 `PK_GLBOOK` 固定为 `0001A9100000000JCNSC`。
+`GL_DETAIL.csv` 会用 `b.csv` 的 N 列 `过账` 匹配 `user.csv` 的 `USER_NAME`，再取同一行的 `CUSERID` 填充 `PK_MANAGERV`；若 `过账` 为空，则 `PK_MANAGERV` 留空。
 
 `GL_DETAIL.csv` A 列 `ASSID` 取值规则：
 
@@ -78,7 +79,7 @@ npx tsx test/step_C.ts "test/015.001/b.csv"
 | `PK_CORP`           | 取 `pk.csv` 第一条数据行的 `PK_CORP`                                           |
 | `PK_CURRTYPE`       | 固定 `00010000000000000001`                                              |
 | `PK_DETAIL`         | `1774A9` + 14 位 UUID；脚本从 `15020000000001` 开始递增                         |
-| `PK_GLBOOK`         | 固定 `0001A9100000000JCNSC`                                              |
+| `PK_GLBOOK`         | 取 `pk.csv` 第一条数据行的 `PK_GLBOOK`；若无该列，则固定为 `0001A9100000000JCNSC`          |
 | `PK_GLORG`          | 取 `pk.csv` 第一条数据行的 `PK_GLORG`                                           |
 | `PK_GLORGBOOK`      | 取 `pk.csv` 第一条数据行的 `PK_GLORGBOOK`                                       |
 | `PK_INNERCORP`      | 留空                                                                     |
@@ -95,7 +96,7 @@ npx tsx test/step_C.ts "test/015.001/b.csv"
 | `FREE6`             | 取 `b.csv` 中 B 列 `期间` 的月份。如 `2002.9`，则为 `09`                            |
 | `NOV`               | 固定 `1`                                                                 |
 | `PERIODV`           | 同 `FREE6`                                                              |
-| `PK_MANAGERV`       | 留空                                                                     |
+| `PK_MANAGERV`       | `b.csv` N 列 `过账` 非空时，按 `user.csv.USER_NAME` 匹配后取 `CUSERID`；为空则留空           |
 | `PK_SYSTEMV`        | 固定 `GL`                                                                |
 | `PK_VOUCHERTYPEV`   | 固定 `0001DEFAULT000000001`                                              |
 | `PREPAREDDATEV`     | 取 `b.csv` 中 A 列 `日期` 的值，并转为 `YYYY-MM-DD`，如 `2002/9/30` 转为 `2002-09-30` |

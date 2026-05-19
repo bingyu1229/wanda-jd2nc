@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 const INPUT_B_FILE_NAME = "b.csv";
 const INPUT_FREEVALUE_FILE_NAME = "GL_FREEVALUE.csv";
 const INPUT_PK_FILE_NAME = "pk.csv";
+const INPUT_USER_FILE_NAME = "user.csv";
 const OUTPUT_DETAIL_FILE_NAME = "GL_DETAIL.csv";
 
 const COL_DATE = 0;
@@ -14,6 +15,7 @@ const COL_SUBJECT_CODE = 4;
 const COL_SUBJECT_NAME = 5;
 const COL_DEBIT = 9;
 const COL_CREDIT = 10;
+const COL_POSTED_BY = 13;
 const COL_SUMMARY = 3;
 
 const DETAIL_HEADER = [
@@ -97,6 +99,7 @@ const DETAIL_PK_VOUCHERTYPEV = "0001DEFAULT000000001";
 type SubjectPkRow = {
   pkAccsubjByCode: Map<string, string>;
   pkCorp: string;
+  pkGlbook: string;
   pkGlorg: string;
   pkGlorgbook: string;
 };
@@ -135,10 +138,10 @@ function printHelp(): void {
   console.error(`Usage: npx tsx step_C.ts [folder-or-b.csv] [options]
 
 Options:
-  folder-or-b.csv    Optional folder or b.csv path. When omitted, recursively processes folders with ${INPUT_B_FILE_NAME}, ${INPUT_FREEVALUE_FILE_NAME}, and ${INPUT_PK_FILE_NAME}.
+  folder-or-b.csv    Optional folder or b.csv path. When omitted, recursively processes folders with ${INPUT_B_FILE_NAME}, ${INPUT_FREEVALUE_FILE_NAME}, ${INPUT_PK_FILE_NAME}, and ${INPUT_USER_FILE_NAME}.
   --utf8-bom         Write UTF-8 with BOM for Excel on Windows
 
-Reads ${INPUT_B_FILE_NAME}, ${INPUT_FREEVALUE_FILE_NAME}, and ${INPUT_PK_FILE_NAME}; writes ${OUTPUT_DETAIL_FILE_NAME} next to them.
+Reads ${INPUT_B_FILE_NAME}, ${INPUT_FREEVALUE_FILE_NAME}, ${INPUT_PK_FILE_NAME}, and ${INPUT_USER_FILE_NAME}; writes ${OUTPUT_DETAIL_FILE_NAME} next to them.
 `);
 }
 
@@ -151,7 +154,8 @@ async function findInputFolders(rootDir: string): Promise<string[]> {
     if (
       names.has(INPUT_B_FILE_NAME) &&
       names.has(INPUT_FREEVALUE_FILE_NAME) &&
-      names.has(INPUT_PK_FILE_NAME)
+      names.has(INPUT_PK_FILE_NAME) &&
+      names.has(INPUT_USER_FILE_NAME)
     ) {
       found.push(dir);
     }
@@ -298,11 +302,17 @@ function requiredColumnIndex(header: string[], name: string, fileName: string): 
   return index;
 }
 
+function optionalColumnIndex(header: string[], name: string): number | undefined {
+  const index = header.indexOf(name);
+  return index < 0 ? undefined : index;
+}
+
 function subjectPkRowFromCsv(pkRows: string[][]): SubjectPkRow {
   const header = pkRows[0] ?? [];
   const subjCodeCol = requiredColumnIndex(header, "SUBJCODE", INPUT_PK_FILE_NAME);
   const pkAccsubjCol = requiredColumnIndex(header, "PK_ACCSUBJ", INPUT_PK_FILE_NAME);
   const pkCorpCol = requiredColumnIndex(header, "PK_CORP", INPUT_PK_FILE_NAME);
+  const pkGlbookCol = optionalColumnIndex(header, "PK_GLBOOK");
   const pkGlorgCol = requiredColumnIndex(header, "PK_GLORG", INPUT_PK_FILE_NAME);
   const pkGlorgbookCol = requiredColumnIndex(
     header,
@@ -324,9 +334,28 @@ function subjectPkRowFromCsv(pkRows: string[][]): SubjectPkRow {
   return {
     pkAccsubjByCode,
     pkCorp: firstDataRow[pkCorpCol] ?? "",
+    pkGlbook:
+      pkGlbookCol === undefined
+        ? DETAIL_PK_GLBOOK
+        : (firstDataRow[pkGlbookCol] ?? ""),
     pkGlorg: firstDataRow[pkGlorgCol] ?? "",
     pkGlorgbook: firstDataRow[pkGlorgbookCol] ?? "",
   };
+}
+
+function managerIdsByUserName(userRows: string[][]): Map<string, string> {
+  const header = userRows[0] ?? [];
+  const userNameCol = requiredColumnIndex(header, "USER_NAME", INPUT_USER_FILE_NAME);
+  const cuserIdCol = requiredColumnIndex(header, "CUSERID", INPUT_USER_FILE_NAME);
+
+  const map = new Map<string, string>();
+  for (let rowIndex = 1; rowIndex < userRows.length; rowIndex++) {
+    const row = userRows[rowIndex];
+    const userName = (row[userNameCol] ?? "").trim();
+    if (!userName) continue;
+    map.set(userName, row[cuserIdCol] ?? "");
+  }
+  return map;
 }
 
 function assIdsByDataRowIndex(
@@ -374,6 +403,7 @@ function detailRows(
   bRows: string[][],
   assIds: Map<number, string>,
   subjectPkRow: SubjectPkRow,
+  managerIds: Map<string, string>,
 ): string[][] {
   return bRows.slice(1).map((row, index) => {
     const creditAmount = row[COL_CREDIT] ?? "";
@@ -384,6 +414,13 @@ function detailRows(
     if (!pkAccsubj) {
       throw new Error(
         `${INPUT_PK_FILE_NAME} has no SUBJCODE match for ${INPUT_B_FILE_NAME} row ${index + 2}: ${subjectCode}`,
+      );
+    }
+    const postedBy = (row[COL_POSTED_BY] ?? "").trim();
+    const pkManager = postedBy ? managerIds.get(postedBy) : "";
+    if (postedBy && !pkManager) {
+      throw new Error(
+        `${INPUT_USER_FILE_NAME} has no USER_NAME match for ${INPUT_B_FILE_NAME} row ${index + 2}: ${postedBy}`,
       );
     }
     const pkDetailUuid = String(DETAIL_PK_DETAIL_UUID_START + index).padStart(14, "0");
@@ -422,7 +459,7 @@ function detailRows(
       subjectPkRow.pkCorp,
       DETAIL_PK_CURRTYPE,
       `1774A9${pkDetailUuid}`,
-      DETAIL_PK_GLBOOK,
+      subjectPkRow.pkGlbook,
       subjectPkRow.pkGlorg,
       subjectPkRow.pkGlorgbook,
       "",
@@ -439,7 +476,7 @@ function detailRows(
       period.month,
       "1",
       period.month,
-      "",
+      pkManager,
       "GL",
       DETAIL_PK_VOUCHERTYPEV,
       formatVoucherDate(row[COL_DATE] ?? ""),
@@ -484,17 +521,20 @@ async function processFolder(folderPath: string, utf8Bom: boolean): Promise<numb
   const bPath = path.join(folderPath, INPUT_B_FILE_NAME);
   const freeValuePath = path.join(folderPath, INPUT_FREEVALUE_FILE_NAME);
   const pkPath = path.join(folderPath, INPUT_PK_FILE_NAME);
+  const userPath = path.join(folderPath, INPUT_USER_FILE_NAME);
   const detailPath = path.join(folderPath, OUTPUT_DETAIL_FILE_NAME);
 
-  const [bRows, freeValueRows, pkRows] = await Promise.all([
+  const [bRows, freeValueRows, pkRows, userRows] = await Promise.all([
     readCsv(bPath),
     readCsv(freeValuePath),
     readCsv(pkPath),
+    readCsv(userPath),
   ]);
 
   const assIds = assIdsByDataRowIndex(bRows, freeValueRows);
   const subjectPkRow = subjectPkRowFromCsv(pkRows);
-  const details = detailRows(bRows, assIds, subjectPkRow);
+  const managerIds = managerIdsByUserName(userRows);
+  const details = detailRows(bRows, assIds, subjectPkRow, managerIds);
   await writeLines(
     detailPath,
     [csvRow(DETAIL_HEADER), ...details.map((row) => csvRow(row))],
@@ -515,7 +555,7 @@ async function main(): Promise<number> {
   const folders = await inputFoldersFromArg(args.input);
   if (folders.length === 0) {
     console.error(
-      `No folders with ${INPUT_B_FILE_NAME}, ${INPUT_FREEVALUE_FILE_NAME}, and ${INPUT_PK_FILE_NAME} found under ${process.cwd()}`,
+      `No folders with ${INPUT_B_FILE_NAME}, ${INPUT_FREEVALUE_FILE_NAME}, ${INPUT_PK_FILE_NAME}, and ${INPUT_USER_FILE_NAME} found under ${process.cwd()}`,
     );
     return 1;
   }

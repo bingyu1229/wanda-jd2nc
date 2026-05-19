@@ -137,7 +137,7 @@ const DROP_COL_INDEX = 2;
 const DEFAULT_INPUT_FILE_NAME = "科目.htm";
 const SUBJECT_IMPORT_FILE_NAME = "科目导入.csv";
 const SUBJECT_IMPORT_HEAD =
-  "bd_accsubj_$head,subjcode,subjname,pk_subjtype,balanorient,period,outflag";
+  "bd_accsubj_$head,subjcode,subjname,pk_subjtype,balanorient,period";
 const SUBJECT_IMPORT_PERIOD_HEADER = "有效期";
 const SUBJECT_IMPORT_PERIOD_VALUE = "2000-01";
 
@@ -154,6 +154,17 @@ function csvQuoteAllRow(fields: string[]): string {
         return `"${s}"`;
       })
       .join(",") + "\n"
+  );
+}
+
+function csvQuoteMinimalRow(fields: string[]): string {
+  return (
+    fields
+      .map((f) => {
+        const s = f.replace(/"/g, '""');
+        return /[",\r\n]/.test(f) ? `"${s}"` : s;
+      })
+      .join(",") + "\r\n"
   );
 }
 
@@ -343,13 +354,10 @@ async function processInputFileStreaming(
   });
 
   const writeStream = fs.createWriteStream(outPath, { encoding: "utf8" });
-  const subjectImportWriteStream = fs.createWriteStream(subjectImportPath, {
-    encoding: "utf8",
-  });
+  const subjectImportWriteStream = fs.createWriteStream(subjectImportPath);
 
   if (args.utf8Bom) {
     writeStream.write("\uFEFF");
-    subjectImportWriteStream.write("\uFEFF");
   }
 
   // State for code deduplication (must persist across rows)
@@ -410,10 +418,14 @@ async function processInputFileStreaming(
     }
 
     // Write to 科目导入.csv
-    const subjectImportLineOut = csvQuoteAllRow(
+    const subjectImportLineOut = csvQuoteMinimalRow(
       subjectImportRowFromCsvRow(outRow, isOutputHeader),
     );
-    if (!subjectImportWriteStream.write(subjectImportLineOut)) {
+    if (
+      !subjectImportWriteStream.write(
+        iconv.encode(subjectImportLineOut, "gb18030"),
+      )
+    ) {
       await once(subjectImportWriteStream, "drain");
     }
 

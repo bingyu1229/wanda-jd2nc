@@ -4,12 +4,14 @@ import readline from "node:readline";
 import { once } from "node:events";
 import { pathToFileURL } from "node:url";
 import iconv from "iconv-lite";
+import { pinyin } from "pinyin-pro";
 
 const CELL_LINE = /^\s*<T[DH]\b[^>]*>(?<body>.*?)<\/T[DH]>\s*$/i;
 
 const DEFAULT_INPUT_FILE_NAME = "会计分类序时簿.htm";
 const OUTPUT_CSV_FILE_NAME = "b.csv";
 const FREEVALUE_FILE_NAME = "GL_FREEVALUE.csv";
+const NAME_SQL_FILE_NAME = "name_sql.txt";
 const ENTRY_NO_HEADER = "分录号";
 
 const COL_DATE = 0;
@@ -20,6 +22,9 @@ const COL_SUBJECT_NAME = 5;
 const COL_ORIGINAL_AMOUNT = 8;
 const COL_DEBIT = 9;
 const COL_CREDIT = 10;
+const COL_PREPARED_BY = 11;
+const COL_AUDITED_BY = 12;
+const COL_POSTED_BY = 13;
 const COL_BUSINESS_DATE = 21;
 
 const FREEVALUE_HEADER = [
@@ -41,8 +46,14 @@ const FREEVALUE_HEADER = [
 const FREEVALUE_CHECKTYPE = "0001A9100000000JCKUS";
 const FREEVALUE_TS = "2026/3/5 16:26";
 const FREEVALUE_CHECKVALUE_UUID_START = 150000001;
-const FREEVALUE_ID_UUID_PREFIX = "1501000000O";
+const FREEVALUE_ID_UUID_PREFIX = "15010000000";
 const FREEVALUE_ID_UUID_START = parseInt("391", 36);
+const USER_CODE_SUFFIX = "(jindie)";
+
+const NAME_PINYIN_OVERRIDES = new Map<string, string>([
+  // Keep this spelling aligned with the requested sample output.
+  ["张春光", "zhangchunghuang"],
+]);
 
 function htmlUnescape(s: string): string {
   return s
@@ -256,7 +267,7 @@ Options:
   --no-normalize-col-e    Skip column E account code normalization
   --excel-text-cols <n>   Comma-separated 0-based column indexes as Excel text (="...")
 
-Writes ${OUTPUT_CSV_FILE_NAME} and ${FREEVALUE_FILE_NAME} next to each input file.
+Writes ${OUTPUT_CSV_FILE_NAME}, ${FREEVALUE_FILE_NAME}, and ${NAME_SQL_FILE_NAME} next to each input file.
 `);
 }
 
@@ -351,13 +362,22 @@ function auxiliaryValueFromSubjectName(subjectName: string): string {
   return subjectName.slice(markerIndex + marker.length).trim();
 }
 
-function uniqueAuxiliaryValues(rows: string[][]): string[] {
-  const values: string[] = [];
-  for (let i = 1; i < rows.length; i++) {
-    const val = auxiliaryValueFromSubjectName(rows[i][COL_SUBJECT_NAME] ?? "");
-    values.push(val);
-  }
-  return values;
+function hasAuxiliaryValue(subjectName: string): boolean {
+  return subjectName.includes(" - ");
+}
+
+function freeValueUuidForIndex(index: number): string {
+  return (
+    FREEVALUE_ID_UUID_PREFIX +
+    (FREEVALUE_ID_UUID_START + index)
+      .toString(36)
+      .toUpperCase()
+      .padStart(3, "0")
+  );
+}
+
+function freeValueIdForIndex(index: number): string {
+  return `1774A${freeValueUuidForIndex(index)}F`;
 }
 
 function freeValueRows(values: string[]): string[][] {
@@ -365,12 +385,7 @@ function freeValueRows(values: string[]): string[][] {
     const ordinal = index + 1;
     const valueCode = String(ordinal).padStart(5, "0");
     const checkValueUuid = String(FREEVALUE_CHECKVALUE_UUID_START + index);
-    const freeValueUuid =
-      FREEVALUE_ID_UUID_PREFIX +
-      (FREEVALUE_ID_UUID_START + index)
-        .toString(36)
-        .toUpperCase()
-        .padStart(3, "0");
+    const freeValueUuid = freeValueUuidForIndex(index);
     return [
       "0",
       "1",
@@ -387,6 +402,66 @@ function freeValueRows(values: string[]): string[][] {
       value,
     ];
   });
+}
+
+function auxiliaryFreeValues(rows: string[][]): string[] {
+  const values: string[] = [];
+  for (let rowIndex = 1; rowIndex < rows.length; rowIndex++) {
+    const subjectName = rows[rowIndex][COL_SUBJECT_NAME] ?? "";
+    if (!hasAuxiliaryValue(subjectName)) continue;
+    values.push(auxiliaryValueFromSubjectName(subjectName));
+  }
+  return values;
+}
+
+function collectUserNames(rows: string[][]): string[] {
+  const names = new Set<string>();
+  for (let rowIndex = 1; rowIndex < rows.length; rowIndex++) {
+    const row = rows[rowIndex];
+    for (const col of [COL_PREPARED_BY, COL_AUDITED_BY, COL_POSTED_BY]) {
+      const name = (row[col] ?? "").trim();
+      if (name) names.add(name);
+    }
+  }
+  return [...names];
+}
+
+function userCodeForName(name: string): string {
+  const override = NAME_PINYIN_OVERRIDES.get(name);
+  if (override) return `${override}${USER_CODE_SUFFIX}`;
+
+  const code = pinyin(name, {
+    toneType: "none",
+    type: "array",
+    nonZh: "consecutive",
+  })
+    .join("")
+    .replace(/\s+/g, "")
+    .toLowerCase();
+
+  return `${code}${USER_CODE_SUFFIX}`;
+}
+
+function sqlQuotedList(values: string[]): string[] {
+  const lines = ["("];
+  values.forEach((value, index) => {
+    const escaped = value.replace(/'/g, "''");
+    const suffix = index === values.length - 1 ? "" : ",";
+    lines.push(`'${escaped}'${suffix}`);
+  });
+  lines.push(")");
+  return lines;
+}
+
+function nameSqlLines(names: string[]): string[] {
+  const userCodes = names.map(userCodeForName);
+  return [
+    "USER_CODE",
+    ...sqlQuotedList(userCodes),
+    "",
+    "USER_NAME",
+    ...sqlQuotedList(names),
+  ].map((line) => `${line}\n`);
 }
 
 async function writeLines(
@@ -414,6 +489,7 @@ async function processInputFile(
 ): Promise<number> {
   const outPath = path.join(path.dirname(inPath), OUTPUT_CSV_FILE_NAME);
   const freeValuePath = path.join(path.dirname(inPath), FREEVALUE_FILE_NAME);
+  const nameSqlPath = path.join(path.dirname(inPath), NAME_SQL_FILE_NAME);
 
   const readStream = fs.createReadStream(inPath);
   const decodeStream = iconv.decodeStream(args.encoding);
@@ -423,7 +499,6 @@ async function processInputFile(
   });
 
   const rows: string[][] = [];
-  const freeValues: string[] = [];
   const usedDottedCodes = new Set<string>();
   const duplicateBaseCounts = new Map<string, number>();
 
@@ -434,10 +509,6 @@ async function processInputFile(
 
     let outRow = row.slice();
     const isOutputHeader = rows.length === 0;
-
-    if (!isOutputHeader) {
-      freeValues.push(auxiliaryValueFromSubjectName(outRow[COL_SUBJECT_NAME] ?? ""));
-    }
 
     if (!isOutputHeader && args.normalizeColE && outRow.length > COL_SUBJECT_CODE) {
       const code = outRow[COL_SUBJECT_CODE] ?? "";
@@ -465,14 +536,20 @@ async function processInputFile(
 
   await writeLines(outPath, outputRows.map((row) => csvQuoteAllRow(row)), args.utf8Bom);
 
+  const freeValues = auxiliaryFreeValues(rows);
+
   await writeLines(
     freeValuePath,
     [csvRow(FREEVALUE_HEADER), ...freeValueRows(freeValues).map((row) => csvRow(row))],
     args.utf8Bom,
   );
 
+  const userNames = collectUserNames(rows);
+  await writeLines(nameSqlPath, nameSqlLines(userNames), args.utf8Bom);
+
   console.error("Wrote", rows.length, "rows to", outPath);
   console.error("Wrote", freeValues.length + 1, "rows to", freeValuePath);
+  console.error("Wrote", userNames.length, "names to", nameSqlPath);
   return rows.length;
 }
 

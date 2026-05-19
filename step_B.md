@@ -1,4 +1,4 @@
-# 辅助核算表生成：HTM → CSV
+# 辅助核算表生成：HTM -> b.csv / GL_FREEVALUE.csv
 
 ## 1. 运行方式
 
@@ -35,15 +35,15 @@ npx tsx test/step_B.ts "test/015.001/会计分类序时簿.htm"
 
 ### 2.1 HTM 基础转换
 
-- 跳过 HTML 表内第 1 行占位表头：`第1列`…`第27列`。
+- 跳过 HTML 表内第 1 行占位表头：`第1列` 到 `第27列`。
 - 保留业务表头作为 CSV 首行：`日期`、`期间`、`凭证号`、`摘要`、`科目代码` 等。
 - 在最后新增第 28 列，表头为 `分录号`。
 
 ### 2.2 规范化列 E：`科目代码`
 
-仅处理「整格由英文字母、数字与点号组成」的科目代码；表头、中文、其他非代码文本保持原样。
+仅处理“整格由英文字母、数字与点号组成”的科目代码；表头、中文、其他非代码文本保持原样。
 
-与`a.csv`中的`原科目代码`匹配，返回`a.csv`中对应的A列`科目代码`的值，并替换现在列 E：`科目代码`中的值。
+与 `a.csv` 中的 `原科目代码` 匹配，返回 `a.csv` 中对应的 A 列 `科目代码` 的值，并替换现在列 E `科目代码` 中的值。
 
 ### 2.3 向下填充空值
 
@@ -87,16 +87,16 @@ npx tsx test/step_B.ts "test/015.001/会计分类序时簿.htm"
 
 ## 3. 生成 `GL_FREEVALUE.csv`
 
-`GL_FREEVALUE.csv` 中 F列 `科目名称` 由 `b.csv` 的 F 列 `科目名称` 中辅助核算值或后缀生成。
+`GL_FREEVALUE.csv` 由 `b.csv` 的 F 列 `科目名称` 中的辅助核算值生成。
 
 生成规则：
 
 1. 扫描 `b.csv` 数据行的 `科目名称`。
-2. 若`科目名称` 中含有 `space-space` ，则取第一个 `space-space` 之后的文本作为辅助核算值。
+2. 若 `科目名称` 中含有 `space-space`（脚本按 `-` 判断），则取第一个 `space-space` 之后的文本作为辅助核算值。
   - 示例：`其他应收款_备用金 - 部门:ZJB - 总经办/职员:HMC - 何明春`
   - 辅助核算值：`部门:ZJB - 总经办/职员:HMC - 何明春`
-3. 如果 `科目名称` 不包含 `-`，则按原值记录。
-4. 不需要去重。
+3. 如果 `科目名称` 不包含 `space-space`，则不写入 `GL_FREEVALUE.csv`。
+4. 不需要去重；每条辅助核算数据行生成一条 `GL_FREEVALUE.csv` 记录。
 
 输出表头固定为：
 
@@ -115,104 +115,50 @@ ASSINDEX,CHECKCOUNT,CHECKTYPE,CHECKVALUE,DR,FREE1,FREE2,FREE3,FREEVALUEID,PK_FRE
 | `CHECKVALUE`                | `0001A92JDT` + 9 位 UUID + `U`；UUID 从 `150000001` 开始递增  |
 | `DR`                        | 固定 `0`                                                 |
 | `FREE1` / `FREE2` / `FREE3` | 留空                                                     |
-| `FREEVALUEID`               | `1774A` + 14 位 UUID + `F`；UUID 从 `1501000000O391` 开始递增 |
+| `FREEVALUEID`               | `1774A` + 14 位 UUID + `F`；UUID 从 `15010000000391` 开始递增 |
 | `PK_FREEVALUE`              | `1774A` + 14 位 UUID + `P`；UUID 与 `FREEVALUEID` 相同      |
 | `TS`                        | 固定 `2026/3/5 16:26`                                    |
 | `VALUECODE`                 | 五位序号，从 `00001` 开始                                      |
-| `VALUENAME`                 | 唯一辅助核算值原文                                              |
+| `VALUENAME`                 | 辅助核算值原文                                                |
 
 
 示例：
 
 ```csv
 ASSINDEX,CHECKCOUNT,CHECKTYPE,CHECKVALUE,DR,FREE1,FREE2,FREE3,FREEVALUEID,PK_FREEVALUE,TS,VALUECODE,VALUENAME
-0,1,0001A9100000000JCKUS,0001A92JDT150000001U,0,,,,1774A1501000000O391F,1774A1601000000O391P,2026/3/5 16:26,00001,部门:ZJB - 总经办/职员:HMC - 何明春
+0,1,0001A9100000000JCKUS,0001A92JDT150000001U,0,,,,1774A15010000000391F,1774A15010000000391P,2026/3/5 16:26,00001,部门:ZJB - 总经办/职员:HMC - 何明春
 ```
 
 ---
 
-## 4. 生成 `GL_DETAIL.csv`
+## 4. 生成 `name_sql.txt`
 
-`GL_DETAIL.csv` 中各列的条目(row)数与`b.csv`保持一致。
+`name_sql.txt` 由 `b.csv` 的 L、M、N 列生成：
 
-`GL_DETAIL.csv` A列 `ASSID`取值规则：
+- L 列：`制单`
+- M 列：`审核`
+- N 列：`过账`
 
-类似于第三步中生成 `科目名称` 的规则，若`科目名称` 中含有 `spacce-space` ，则`GL_DETAIL.csv` A列 `ASSID` 取 `GL_FREEVALUE.csv` 中I列 `FREEVALUEID`的值。若`科目名称` 中不含有 `spacce-space`，为空值。
+生成规则：
 
-字段规则：
+1. 扫描三列中的所有姓名。
+2. 去除空值，并按首次出现顺序去重。
+3. `USER_NAME` 使用原中文姓名。
+4. `USER_CODE` 使用姓名拼音小写并追加 `(jindie)`。
 
+输出分为两段：
 
-| 字段                          | 规则                                                  |
-| --------------------------- | --------------------------------------------------- |
-| `ASSID`                     | `FREEVALUEID`或留空                                    |
-| `BANKACCOUNT`               | 留空                                                  |
-| `CHECKDATE`                 | 留空                                                  |
-| `CHECKNO`                   | 留空                                                  |
-| `CHECKSTYLE`                | 留空                                                  |
-| `FREE1` / `FREE2` / `FREE3` | 留空                                                  |
-| `CONTRASTFLAG`              | 留空                                                  |
-| `CONVERTFLAG`               | 留空                                                  |
-| `CREDITAMOUNT`              | 复制`b.csv`中K列`贷方`的值                                  |
-| `CREDITQUANTITY`            | 固定 `0`                                              |
-| `DEBITAMOUNT`               | 复制`b.csv`中J列`借方`的值                                  |
-| `DEBITQUANTITY`             | 固定 `0`                                              |
-| `DETAILINDEX`               | 复制`b.csv`中AB列`分录号`的值                                |
-| `DR`                        | 固定 `0`                                              |
-| `ERRMESSAGE`                | 留空                                                  |
-| `EXCRATE1`                  | 固定 `0`                                              |
-| `EXCRATE2`                  | 固定 `1`                                              |
-| `EXPLANATION`               | 复制`b.csv`中D列`摘要`的值                                  |
-| `FRACCREDITAMOUNT`          | 固定 `0`                                              |
-| `FRACDEBITAMOUNT`           | 固定 `0`                                              |
-| `FREE1`                     | 留空                                                  |
-| `FREE2`                     | 留空                                                  |
-| `FREE3`                     | 留空                                                  |
-| `FREE4`                     | 留空                                                  |
-| `FREE5`                     | 留空                                                  |
-| `LOCALCREDITAMOUNT`         | 复制`b.csv`中K列`贷方`的值                                  |
-| `LOCALDEBITAMOUNT`          | 复制`b.csv`中J列`借方`的值                                  |
-| `MODIFYFLAG`                | 固定 `YYYYYYYYYYYYYYYY`                               |
-| `OPPOSITESUBJ`              | 留空                                                  |
-| `PK_ACCSUBJ`                | 留空                                                  |
-| `PK_CORP`                   | 留空                                                  |
-| `CREDITQUANTITY`            | 固定 `0`                                              |
-| `PK_CURRTYPE`               | 固定 `00010000000000000001`                           |
-| `PK_DETAIL`                 | `1774A9` + 14 位 UUID                                |
-| `PK_GLBOOK`                 | 固定 `0001A9100000000JCNSC`                           |
-| `PK_GLORG`                  | 留空                                                  |
-| `PK_GLORGBOOK`              | 留空                                                  |
-| `PK_INNERCORP`              | 留空                                                  |
-| `PK_INNERSOB`               | 留空                                                  |
-| `PK_SOB`                    | 留空                                                  |
-| `PK_SOURCEPK`               | 留空                                                  |
-| `PK_VOUCHER`                | `0001DEFAULT` + 9 位 UUID                            |
-| `PRICE`                     | 固定 `0`                                              |
-| `RECIEPTCLASS`              | 留空                                                  |
-| `PK_GLBOOK`                 | 固定 `0001A9100000000JCNSC`                           |
-| `TS`                        | 固定 `2026-03-11 9:00:00`                             |
-| `DIRECTION`                 | 若`LOCALCREDITAMOUNT`为`0`，则为`D`，否则为`C`               |
-| `DISCARDFLAGV`              | 固定 `N`                                              |
-| `ERRMESSAGE2`               | 留空                                                  |
-| `FREE6`                     | 取`b.csv`中B列`期间`的月份。如`2002.9`，则为`09`                 |
-| `NOV`                       | 固定 `1`                                              |
-| `PERIODV`                   | 同`FREE6`                                            |
-| `PK_MANAGERV`               | 留空                                                  |
-| `PK_SYSTEMV`                | 固定 `GL`                                             |
-| `PK_VOUCHERTYPEV`           | 固定`0001DEFAULT000000001`                            |
-| `PREPAREDDATEV`             | 取`b.csv`中A列`日期`的值，并需转化形式，如`2002/9/30`转为`2002-09-30` |
-| `SIGNDATEV`                 | 留空                                                  |
-| `VOUCHERKINDV`              | 留空                                                  |
-| `YEARV`                     | 取`b.csv`中B列`期间`的年份。如`2002.9`，则为`2002`               |
-| `BUSIRECONNO`               | 留空                                                  |
-| `ERRMESSAGEH`               | 留空                                                  |
-| `FREE10`                    | 留空                                                  |
-| `FREE11`                    | 留空                                                  |
-| `FREE7`                     | 留空                                                  |
-| `FREE8`                     | 留空                                                  |
-| `FREE9`                     | 留空                                                  |
-| `ISDIFFLAG`                 | 固定 `N`                                              |
-| `PK_OFFERDETAIL`            | 留空                                                  |
-| `PK_OTHERCORP`              | 留空                                                  |
-| `PK_OTHERORGBOOK`           | 留空                                                  |
+```text
+USER_CODE
+(
+'yinshijun(jindie)',
+'wangxingquan(jindie)'
+)
 
+USER_NAME
+(
+'尹世军',
+'王兴全'
+)
+```
 

@@ -110,7 +110,7 @@ npx tsx test/step_A.ts
 
 ## 4. 生成「科目导入.csv」
 
-运行 `htm_table_to_csv.ts` 生成第 2 步 CSV 时，会在输出 CSV 的同一目录额外生成：
+运行 `a.ts` 生成第 2 步 CSV 时，会在输出 CSV 的同一目录额外生成：
 
 - `科目导入.csv`
 

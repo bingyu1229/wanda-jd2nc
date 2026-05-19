@@ -128,30 +128,6 @@ function flattenCode(dotted: string): string {
   return dotted.replace(/\./g, "");
 }
 
-function makeUniqueDottedCode(
-  dotted: string,
-  usedDottedCodes: Set<string>,
-  duplicateBaseCounts: Map<string, number>,
-): string {
-  const previousCount = duplicateBaseCounts.get(dotted) ?? 0;
-  duplicateBaseCounts.set(dotted, previousCount + 1);
-
-  if (previousCount === 0 && !usedDottedCodes.has(dotted)) {
-    usedDottedCodes.add(dotted);
-    return dotted;
-  }
-
-  let suffix = Math.max(previousCount, 1);
-  while (true) {
-    const candidate = `${dotted}.${String(suffix).padStart(3, "0")}`;
-    if (!usedDottedCodes.has(candidate)) {
-      usedDottedCodes.add(candidate);
-      return candidate;
-    }
-    suffix++;
-  }
-}
-
 function csvQuoteField(value: string): string {
   const escaped = value.replace(/"/g, '""');
   return `"${escaped}"`;
@@ -499,8 +475,6 @@ async function processInputFile(
   });
 
   const rows: string[][] = [];
-  const usedDottedCodes = new Set<string>();
-  const duplicateBaseCounts = new Map<string, number>();
 
   let htmTableRowIndex = 0;
   for await (const row of htmTableRows(lineStream)) {
@@ -514,8 +488,7 @@ async function processInputFile(
       const code = outRow[COL_SUBJECT_CODE] ?? "";
       if (shouldNormalizeCode(code)) {
         const dotted = normalizeDottedCode(code);
-        const uniqueDotted = makeUniqueDottedCode(dotted, usedDottedCodes, duplicateBaseCounts);
-        outRow[COL_SUBJECT_CODE] = flattenCode(uniqueDotted);
+        outRow[COL_SUBJECT_CODE] = flattenCode(dotted);
       }
     }
     rows.push(outRow);

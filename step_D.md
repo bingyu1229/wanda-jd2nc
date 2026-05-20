@@ -1,4 +1,4 @@
-# 明细表生成：b.csv / GL_DETAIL.csv -> GL_VOUCHER.csv
+# 凭证表生成：b.csv / GL_DETAIL.csv -> GL_VOUCHER.csv
 
 ## 1. 运行方式
 
@@ -69,74 +69,51 @@ npx tsx test/step_C.ts "test/015.001/b.csv"
 字段规则：
 
 
-| 字段                  | 规则                                                                     |
-| ------------------- | ---------------------------------------------------------------------- |
-| `ADDCLASS`          | 留空                                                                     |
-| `ATTACHMENT`        | 复制 `b.csv` 中 X 列 `附件` 的值                                               |
-| `CHECKDATE`         | 留空                                                                     |
-| `CONTRASTFLAG`      | 留空                                                                     |
-| `CONVERTFLAG`       | 留空                                                                     |
-| `DELETECLASS`       | 留空                                                                     |
-| `DETAILMODFLAG`     | 固定 `Y`                                                                 |
-| `DISCARDFLAG`       | 固定 `N`                                                                 |
-| `DR`                | 固定 `0`                                                                 |
-| `ERRMESSAGE`        | 留空                                                                     |
-| `EXPLANATION`       | 留空                                                                     |
-| `FREE1`             | 复制 `b.csv` 中 `PERIODV` 的值                                            |
-| `DR`                | 固定 `0`                                                                 |
-| `ERRMESSAGE`        | 留空                                                                     |
-| `EXCRATE1`          | 固定 `0`                                                                 |
-| `EXCRATE2`          | 固定 `1`                                                                 |
-| `EXPLANATION`       | 复制 `b.csv` 中 D 列 `摘要` 的值                                               |
-| `FRACCREDITAMOUNT`  | 固定 `0`                                                                 |
-| `FRACDEBITAMOUNT`   | 固定 `0`                                                                 |
-| `FREE1`             | 留空                                                                     |
-| `FREE2`             | 留空                                                                     |
-| `FREE3`             | 留空                                                                     |
-| `FREE4`             | 留空                                                                     |
-| `FREE5`             | 留空                                                                     |
-| `LOCALCREDITAMOUNT` | 复制 `b.csv` 中 K 列 `贷方` 的值                                               |
-| `LOCALDEBITAMOUNT`  | 复制 `b.csv` 中 J 列 `借方` 的值                                               |
-| `MODIFYFLAG`        | 固定 `YYYYYYYYYYYYYYYY`                                                  |
-| `OPPOSITESUBJ`      | 留空                                                                     |
-| `PK_ACCSUBJ`        | 按 `b.csv` 科目代码匹配 `pk.csv.SUBJCODE` 后取 `PK_ACCSUBJ`                     |
-| `PK_CORP`           | 取 `pk.csv` 第一条数据行的 `PK_CORP`                                           |
-| `PK_CURRTYPE`       | 固定 `00010000000000000001`                                              |
-| `PK_DETAIL`         | `1774A9` + 14 位 UUID；脚本从 `15020000000001` 开始递增                         |
-| `PK_GLBOOK`         | 取 `pk.csv` 第一条数据行的 `PK_GLBOOK`；若无该列，则固定为 `0001A9100000000JCNSC`        |
-| `PK_GLORG`          | 取 `pk.csv` 第一条数据行的 `PK_GLORG`                                          |
-| `PK_GLORGBOOK`      | 取 `pk.csv` 第一条数据行的 `PK_GLORGBOOK`                                      |
-| `PK_INNERCORP`      | 留空                                                                     |
-| `PK_INNERSOB`       | 留空                                                                     |
-| `PK_SOB`            | 留空                                                                     |
-| `PK_SOURCEPK`       | 留空                                                                     |
-| `PK_VOUCHER`        | `0001DEFAULT` + 9 位 UUID；脚本从 `150000001` 开始递增                          |
-| `PRICE`             | 固定 `0`                                                                 |
-| `RECIEPTCLASS`      | 留空                                                                     |
-| `TS`                | 固定 `2026-03-11 9:00:00`                                                |
-| `DIRECTION`         | 若 `LOCALCREDITAMOUNT` 为 `0`，则为 `D`，否则为 `C`                             |
-| `DISCARDFLAGV`      | 固定 `N`                                                                 |
-| `ERRMESSAGE2`       | 留空                                                                     |
-| `FREE6`             | 取 `b.csv` 中 B 列 `期间` 的月份。如 `2002.9`，则为 `09`                            |
-| `NOV`               | 固定 `1`                                                                 |
-| `PERIODV`           | 同 `FREE6`                                                              |
-| `PK_MANAGERV`       | `b.csv` N 列 `过账` 非空时，按 `user.csv.USER_NAME` 匹配后取 `CUSERID`；为空则留空       |
-| `PK_SYSTEMV`        | 固定 `GL`                                                                |
-| `PK_VOUCHERTYPEV`   | 固定 `0001DEFAULT000000001`                                              |
-| `PREPAREDDATEV`     | 取 `b.csv` 中 A 列 `日期` 的值，并转为 `YYYY-MM-DD`，如 `2002/9/30` 转为 `2002-09-30` |
-| `SIGNDATEV`         | 留空                                                                     |
-| `VOUCHERKINDV`      | 留空                                                                     |
-| `YEARV`             | 取 `b.csv` 中 B 列 `期间` 的年份。如 `2002.9`，则为 `2002`                          |
-| `BUSIRECONNO`       | 留空                                                                     |
-| `ERRMESSAGEH`       | 留空                                                                     |
-| `FREE10`            | 留空                                                                     |
-| `FREE11`            | 留空                                                                     |
-| `FREE7`             | 留空                                                                     |
-| `FREE8`             | 留空                                                                     |
-| `FREE9`             | 留空                                                                     |
-| `ISDIFFLAG`         | 固定 `N`                                                                 |
-| `PK_OFFERDETAIL`    | 留空                                                                     |
-| `PK_OTHERCORP`      | 留空                                                                     |
-| `PK_OTHERORGBOOK`   | 留空                                                                     |
+| 字段                                                | 规则                                                               |
+| ------------------------------------------------- | ---------------------------------------------------------------- |
+| `ADDCLASS`                                        | 留空                                                               |
+| `ATTACHMENT`                                      | 复制 `b.csv` 中 X 列 `附件` 的值                                         |
+| `CHECKDATE`                                       | 留空                                                               |
+| `CONTRASTFLAG`                                    | 留空                                                               |
+| `CONVERTFLAG`                                     | 留空                                                               |
+| `DELETECLASS`                                     | 留空                                                               |
+| `DETAILMODFLAG`                                   | 固定 `Y`                                                           |
+| `DISCARDFLAG`                                     | 固定 `N`                                                           |
+| `DR`                                              | 固定 `0`                                                           |
+| `ERRMESSAGE`                                      | 留空                                                               |
+| `EXPLANATION`                                     | 留空                                                               |
+| `FREE1`                                           | 复制 `GL_DETAIL.csv` 中 `PERIODV` 的值                                |
+| `FREE10`                                          | 固定 `VOUCHERNEWADD`                                               |
+| `FREE2/FREE3/FREE4/FREE5/FREE6/FREE7/FREE8/FREE9` | 留空                                                               |
+| `MODIFYCLASS`                                     | 留空                                                               |
+| `MODIFYFLAG`                                      | 固定 `YYY`                                                         |
+| `NO`                                              | 固定 `1`                                                           |
+| `PERIOD`                                          | 复制 `GL_DETAIL.csv` 中 `PERIODV` 的值                                |
+| `FRACDEBITAMOUNT`                                 | 固定 `0`                                                           |
+| `PK_CASHER`                                       | 留空                                                               |
+| `PK_CHECKED`                                      | `b.csv` M 列 `审核` 非空时，按 `user.csv.USER_NAME` 匹配后取 `CUSERID`；为空则留空 |
+| `PK_CORP`                                         | 复制 `GL_DETAIL.csv` 中 `PK_CORP`的值                                 |
+| `PK_GLBOOK`                                       | 复制 `GL_DETAIL.csv` 中 `PK_GLBOOK`的值                               |
+| `PK_GLORG`                                        | 复制 `GL_DETAIL.csv` 中 `PK_GLORG`的值                                |
+| `PK_GLORGBOOK`                                    | 复制 `GL_DETAIL.csv` 中 `PK_GLORGBOOK`的值                            |
+| `PK_MANAGER`                                      | `b.csv` N 列 `过账` 非空时，按 `user.csv.USER_NAME` 匹配后取 `CUSERID`；为空则留空 |
+| `PK_PREPARED`                                     | `b.csv` L 列 `制单` 非空时，按 `user.csv.USER_NAME` 匹配后取 `CUSERID`；为空则留空 |
+| `PK_SOB`                                          | 留空                                                               |
+| `PK_SOURCEPK`                                     | 留空                                                               |
+| `PK_SYSTEM`                                       | 固定 `GL`                                                          |
+| `PK_VOUCHER`                                      | 复制 `GL_DETAIL.csv` 中 `PK_VOUCHER`的值                              |
+| `PK_VOUCHERTYPE`                                  | 固定 `0001DEFAULT000000001`                                        |
+| `PREPAREDDATE`                                    | 复制 `b.csv` 中 A列`日期`的值                                            |
+| `SIGNDATE`                                        | 留空                                                               |
+| `SIGNFLAG`                                        | 固定 `Y`                                                           |
+| `TALLYDATE`                                       | 同`PREPAREDDATE`                                                  |
+| `TOTALCREDIT`                                     | 期间内`GL_DETAIL.csv`中 `CREDITAMOUNT`的值                             |
+| `TOTALDEBIT`                                      | 期间内`GL_DETAIL.csv`中 `DEBITAMOUNT`的值                              |
+| `TS`                                              | 固定 `2026-03-11 9:00:00`                                          |
+| `VOUCHERKIND`                                     | 固定 `0`                                                           |
+| `YEAR`                                            | 复制 `GL_DETAIL.csv` 中 `YEARV`的值                                   |
+| `ERRMESSAGEH`                                     | 留空                                                               |
+| `ISDIFFLAG`                                       | 固定 `N`                                                           |
+| `OFFERVOUCHER`                                    | 留空                                                               |
 
 

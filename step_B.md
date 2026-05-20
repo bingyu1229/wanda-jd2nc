@@ -100,8 +100,8 @@ npx tsx test/step_B.ts "test/015.001/会计分类序时簿.htm"
   - 示例：`其他应收款_备用金 - 部门:ZJB - 总经办/职员:HMC - 何明春`
   - 辅助核算值：`部门:ZJB - 总经办/职员:HMC - 何明春`
 3. 如果 `科目名称` 不包含 `space-space`，则不写入 `GL_FREEVALUE.csv`。
-4. 不需要去重；每条辅助核算数据行生成一条 `GL_FREEVALUE.csv` 记录。
-5. 但如果 `VALUENAME` 与前面已生成记录重复，则复用第一次出现时生成的 `CHECKVALUE`、`FREEVALUEID`、`PK_FREEVALUE`；如果是新的 `VALUENAME`，则生成一组新的值。
+4. 需要按 `VALUENAME` 去重；如果同一个辅助核算值出现多次，只保留第一次出现时生成的 `GL_FREEVALUE.csv` 记录，后续重复值不再写入。
+5. `CHECKVALUE`、`FREEVALUEID`、`PK_FREEVALUE` 的 UUID 使用输入文件所在目录名中的数字作为前缀，再追加目录内序号；例如目录名 `023.001` 取 `023001`。`CHECKVALUE` 生成 `023001000`、`023001001`；`FREEVALUEID` 和 `PK_FREEVALUE` 生成 `02300100000000`、`02300100000001`，避免不同目录重复。
 
 输出表头固定为：
 
@@ -117,13 +117,13 @@ ASSINDEX,CHECKCOUNT,CHECKTYPE,CHECKVALUE,DR,FREE1,FREE2,FREE3,FREEVALUEID,PK_FRE
 | `ASSINDEX`                  | 固定 `0`                                                 |
 | `CHECKCOUNT`                | 固定 `1`                                                 |
 | `CHECKTYPE`                 | 固定 `0001A9100000000JCKUS`                              |
-| `CHECKVALUE`                | `0001A92JDT` + 9 位 UUID + `U`；UUID 从 `150000001` 开始按新 `VALUENAME` 递增，重复 `VALUENAME` 复用原值 |
+| `CHECKVALUE`                | `0001A92JDT` + UUID + `U`；UUID 为目录名数字 + 目录内序号，如 `023.001` 从 `023001000` 开始 |
 | `DR`                        | 固定 `0`                                                 |
 | `FREE1` / `FREE2` / `FREE3` | 留空                                                     |
-| `FREEVALUEID`               | `1774A` + 14 位 UUID + `F`；UUID 从 `15010000000391` 开始按新 `VALUENAME` 递增，重复 `VALUENAME` 复用原值 |
-| `PK_FREEVALUE`              | `1774A` + 14 位 UUID + `P`；UUID 与 `FREEVALUEID` 相同，重复 `VALUENAME` 复用原值 |
+| `FREEVALUEID`               | `1774A` + 14 位 UUID + `F`；UUID 为目录名数字 + 目录内序号，如 `023.001` 从 `02300100000000` 开始 |
+| `PK_FREEVALUE`              | `1774A` + 14 位 UUID + `P`；UUID 与 `FREEVALUEID` 相同                 |
 | `TS`                        | 固定 `2026/3/5 16:26`                                    |
-| `VALUECODE`                 | 五位行序号，从 `00001` 开始；即使 `VALUENAME` 重复也按输出行递增       |
+| `VALUECODE`                 | 五位行序号，从 `00001` 开始，按去重后的输出行递增                      |
 | `VALUENAME`                 | 辅助核算值原文                                                |
 
 
@@ -131,7 +131,7 @@ ASSINDEX,CHECKCOUNT,CHECKTYPE,CHECKVALUE,DR,FREE1,FREE2,FREE3,FREEVALUEID,PK_FRE
 
 ```csv
 ASSINDEX,CHECKCOUNT,CHECKTYPE,CHECKVALUE,DR,FREE1,FREE2,FREE3,FREEVALUEID,PK_FREEVALUE,TS,VALUECODE,VALUENAME
-0,1,0001A9100000000JCKUS,0001A92JDT150000001U,0,,,,1774A15010000000391F,1774A15010000000391P,2026/3/5 16:26,00001,部门:ZJB - 总经办/职员:HMC - 何明春
+0,1,0001A9100000000JCKUS,0001A92JDT023001000U,0,,,,1774A02300100000000F,1774A02300100000000P,2026/3/5 16:26,00001,部门:ZJB - 总经办/职员:HMC - 何明春
 ```
 
 ---

@@ -46,9 +46,8 @@ const FREEVALUE_HEADER = [
 
 const FREEVALUE_CHECKTYPE = "0001A9100000000JCKUS";
 const FREEVALUE_TS = "2026/3/5 16:26";
-const FREEVALUE_CHECKVALUE_UUID_START = 150000001;
-const FREEVALUE_ID_UUID_PREFIX = "15010000000";
-const FREEVALUE_ID_UUID_START = parseInt("391", 36);
+const FREEVALUE_CHECKVALUE_UUID_WIDTH = 9;
+const FREEVALUE_ID_UUID_WIDTH = 14;
 const USER_CODE_SUFFIX = "(jindie)";
 
 const NAME_PINYIN_OVERRIDES = new Map<string, string>([
@@ -362,56 +361,55 @@ function hasAuxiliaryValue(subjectName: string): boolean {
   return subjectName.includes(" - ");
 }
 
-function freeValueUuidForIndex(index: number): string {
-  return (
-    FREEVALUE_ID_UUID_PREFIX +
-    (FREEVALUE_ID_UUID_START + index)
-      .toString(36)
-      .toUpperCase()
-      .padStart(3, "0")
-  );
+function folderUuidSeed(folderPath: string): string {
+  const seed = path.basename(folderPath).replace(/\D/g, "");
+  if (!seed) {
+    throw new Error(
+      `Cannot build GL_FREEVALUE UUID seed from folder name: ${folderPath}`,
+    );
+  }
+  return seed;
 }
 
-function freeValueIdForIndex(index: number): string {
-  return `1774A${freeValueUuidForIndex(index)}F`;
+function freeValueUuidBody(folderSeed: string, index: number, width: number): string {
+  const minSequenceWidth = width - folderSeed.length;
+  if (minSequenceWidth < 1) {
+    throw new Error(
+      `Folder UUID seed ${folderSeed} leaves no room for a ${width}-digit per-folder sequence`,
+    );
+  }
+
+  const sequence = String(index).padStart(minSequenceWidth, "0");
+  return `${folderSeed}${sequence}`;
 }
 
-function freeValueRows(values: string[]): string[][] {
-  const idsByValueName = new Map<
-    string,
-    { checkValue: string; freeValueId: string; pkFreeValue: string }
-  >();
-  let uniqueValueIndex = 0;
+function freeValueRows(values: string[], folderPath: string): string[][] {
+  const uuidSeed = folderUuidSeed(folderPath);
 
   return values.map((value, index) => {
     const ordinal = index + 1;
     const valueCode = String(ordinal).padStart(5, "0");
-    let ids = idsByValueName.get(value);
-    if (!ids) {
-      const checkValueUuid = String(
-        FREEVALUE_CHECKVALUE_UUID_START + uniqueValueIndex,
-      );
-      const freeValueUuid = freeValueUuidForIndex(uniqueValueIndex);
-      ids = {
-        checkValue: `0001A92JDT${checkValueUuid}U`,
-        freeValueId: `1774A${freeValueUuid}F`,
-        pkFreeValue: `1774A${freeValueUuid}P`,
-      };
-      idsByValueName.set(value, ids);
-      uniqueValueIndex++;
-    }
-
+    const checkValueUuid = freeValueUuidBody(
+      uuidSeed,
+      index,
+      FREEVALUE_CHECKVALUE_UUID_WIDTH,
+    );
+    const freeValueUuid = freeValueUuidBody(
+      uuidSeed,
+      index,
+      FREEVALUE_ID_UUID_WIDTH,
+    );
     return [
       "0",
       "1",
       FREEVALUE_CHECKTYPE,
-      ids.checkValue,
+      `0001A92JDT${checkValueUuid}U`,
       "0",
       "",
       "",
       "",
-      ids.freeValueId,
-      ids.pkFreeValue,
+      `1774A${freeValueUuid}F`,
+      `1774A${freeValueUuid}P`,
       FREEVALUE_TS,
       valueCode,
       value,
@@ -421,10 +419,14 @@ function freeValueRows(values: string[]): string[][] {
 
 function auxiliaryFreeValues(rows: string[][]): string[] {
   const values: string[] = [];
+  const seen = new Set<string>();
   for (let rowIndex = 1; rowIndex < rows.length; rowIndex++) {
     const subjectName = rows[rowIndex][COL_SUBJECT_NAME] ?? "";
     if (!hasAuxiliaryValue(subjectName)) continue;
-    values.push(auxiliaryValueFromSubjectName(subjectName));
+    const value = auxiliaryValueFromSubjectName(subjectName);
+    if (seen.has(value)) continue;
+    seen.add(value);
+    values.push(value);
   }
   return values;
 }
@@ -553,7 +555,10 @@ async function processInputFile(
 
   await writeLines(
     freeValuePath,
-    [csvRow(FREEVALUE_HEADER), ...freeValueRows(freeValues).map((row) => csvRow(row))],
+    [
+      csvRow(FREEVALUE_HEADER),
+      ...freeValueRows(freeValues, path.dirname(inPath)).map((row) => csvRow(row)),
+    ],
     args.utf8Bom,
   );
 

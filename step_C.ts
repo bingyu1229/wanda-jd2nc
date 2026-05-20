@@ -365,35 +365,35 @@ function assIdsByDataRowIndex(
   const map = new Map<number, string>();
   const freeValueIdCol = freeValueIdColumnIndex(freeValueRows[0] ?? []);
   const valueNameCol = valueNameColumnIndex(freeValueRows[0] ?? []);
-  let freeValueDataIndex = 1;
+  const freeValueIdByName = new Map<string, string>();
+
+  for (let rowIndex = 1; rowIndex < freeValueRows.length; rowIndex++) {
+    const row = freeValueRows[rowIndex];
+    const valueName = row[valueNameCol] ?? "";
+    if (!valueName) continue;
+
+    const freeValueId = row[freeValueIdCol] ?? "";
+    const existing = freeValueIdByName.get(valueName);
+    if (existing && existing !== freeValueId) {
+      throw new Error(
+        `${INPUT_FREEVALUE_FILE_NAME} has duplicate VALUENAME with different FREEVALUEID at row ${rowIndex + 1}: ${valueName}`,
+      );
+    }
+    freeValueIdByName.set(valueName, freeValueId);
+  }
 
   for (let bRowIndex = 1; bRowIndex < bRows.length; bRowIndex++) {
     const subjectName = bRows[bRowIndex][COL_SUBJECT_NAME] ?? "";
     if (!hasAuxiliaryValue(subjectName)) continue;
 
-    const freeValueRow = freeValueRows[freeValueDataIndex];
-    if (!freeValueRow) {
-      throw new Error(
-        `${INPUT_FREEVALUE_FILE_NAME} has fewer auxiliary rows than ${INPUT_B_FILE_NAME}`,
-      );
-    }
-
     const expectedValue = auxiliaryValueFromSubjectName(subjectName);
-    const actualValue = freeValueRow[valueNameCol] ?? "";
-    if (expectedValue !== actualValue) {
-      console.error(
-        `Warning: row ${bRowIndex + 1} auxiliary value differs from GL_FREEVALUE row ${freeValueDataIndex + 1}.`,
+    const freeValueId = freeValueIdByName.get(expectedValue);
+    if (!freeValueId) {
+      throw new Error(
+        `${INPUT_FREEVALUE_FILE_NAME} has no VALUENAME match for ${INPUT_B_FILE_NAME} row ${bRowIndex + 1}: ${expectedValue}`,
       );
     }
-
-    map.set(bRowIndex - 1, freeValueRow[freeValueIdCol] ?? "");
-    freeValueDataIndex++;
-  }
-
-  if (freeValueDataIndex < freeValueRows.length) {
-    console.error(
-      `Warning: ${INPUT_FREEVALUE_FILE_NAME} has ${freeValueRows.length - freeValueDataIndex} unused data row(s).`,
-    );
+    map.set(bRowIndex - 1, freeValueId);
   }
 
   return map;

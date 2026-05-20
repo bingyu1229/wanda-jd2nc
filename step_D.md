@@ -2,7 +2,7 @@
 
 ## 1. 运行方式
 
-- 使用脚本：`test/step_D.ts`
+- 使用脚本：`test/step_D.ts`（封装调用 `test/script_D.ts`）
 - 在项目根目录执行：
 
 ```bash
@@ -13,13 +13,13 @@ npx tsx test/step_D.ts
 - 调试单个目录时，可以传入目录路径：
 
 ```bash
-npx tsx test/step_C.ts "test/015.001"
+npx tsx test/step_D.ts "test/015.001"
 ```
 
 - 也可以直接传入 `b.csv` 路径：
 
 ```bash
-npx tsx test/step_C.ts "test/015.001/b.csv"
+npx tsx test/step_D.ts "test/015.001/b.csv"
 ```
 
 - 默认输出：在输入目录内生成 `GL_VOUCHER.csv`。
@@ -34,7 +34,7 @@ npx tsx test/step_C.ts "test/015.001/b.csv"
 
 `GL_VOUCHER.csv` 的数据行数与 `GL_DETAIL.csv` 中`DETAILINDEX`为`1`的数据行数保持一致。
 
-因为`GL_DETAIL.csv` 的数据行数与 `b.csv` 一致，且`GL_DETAIL.csv.DETAILINDEX`与`b.csv.分录号`保持一致，因此`GL_VOUCHER.csv可同时对照GL_DETAIL.csv`与`b.csv。`  
+因为 `GL_DETAIL.csv` 的数据行数与 `b.csv` 一致，且 `GL_DETAIL.csv.DETAILINDEX` 与 `b.csv.分录号` 保持一致，因此 `GL_VOUCHER.csv` 可同时对照 `GL_DETAIL.csv` 与 `b.csv`。  
 
 `GL_VOUCHER.csv` AQ 列 `TOTALCREDIT`和 AR 列 `TOTALDEBIT` 取值规则：
 
@@ -63,7 +63,7 @@ npx tsx test/step_C.ts "test/015.001/b.csv"
 | ----------- | ---------- |
 | `80.00`     | `100.00`   |
 | `40.00`     | `20.00`    |
-| `95.00`     | `26.00`    |
+| `95.00`     | `25.00`    |
 
 
 字段规则：
@@ -73,7 +73,7 @@ npx tsx test/step_C.ts "test/015.001/b.csv"
 | ------------------------------------------------- | ---------------------------------------------------------------- |
 | `ADDCLASS`                                        | 留空                                                               |
 | `ATTACHMENT`                                      | 复制 `b.csv` 中 X 列 `附件` 的值                                         |
-| `CHECKDATE`                                       | 留空                                                               |
+| `CHECKEDDATE`                                     | 留空                                                               |
 | `CONTRASTFLAG`                                    | 留空                                                               |
 | `CONVERTFLAG`                                     | 留空                                                               |
 | `DELETECLASS`                                     | 留空                                                               |
@@ -89,7 +89,6 @@ npx tsx test/step_C.ts "test/015.001/b.csv"
 | `MODIFYFLAG`                                      | 固定 `YYY`                                                         |
 | `NO`                                              | 固定 `1`                                                           |
 | `PERIOD`                                          | 复制 `GL_DETAIL.csv` 中 `PERIODV` 的值                                |
-| `FRACDEBITAMOUNT`                                 | 固定 `0`                                                           |
 | `PK_CASHER`                                       | 留空                                                               |
 | `PK_CHECKED`                                      | `b.csv` M 列 `审核` 非空时，按 `user.csv.USER_NAME` 匹配后取 `CUSERID`；为空则留空 |
 | `PK_CORP`                                         | 复制 `GL_DETAIL.csv` 中 `PK_CORP`的值                                 |
@@ -107,13 +106,11 @@ npx tsx test/step_C.ts "test/015.001/b.csv"
 | `SIGNDATE`                                        | 留空                                                               |
 | `SIGNFLAG`                                        | 固定 `Y`                                                           |
 | `TALLYDATE`                                       | 同`PREPAREDDATE`                                                  |
-| `TOTALCREDIT`                                     | 期间内`GL_DETAIL.csv`中 `CREDITAMOUNT`的值                             |
-| `TOTALDEBIT`                                      | 期间内`GL_DETAIL.csv`中 `DEBITAMOUNT`的值                              |
+| `TOTALCREDIT`                                     | 期间内 `GL_DETAIL.csv` 中 `CREDITAMOUNT` 的求和结果                       |
+| `TOTALDEBIT`                                      | 期间内 `GL_DETAIL.csv` 中 `DEBITAMOUNT` 的求和结果                        |
 | `TS`                                              | 固定 `2026-03-11 9:00:00`                                          |
 | `VOUCHERKIND`                                     | 固定 `0`                                                           |
 | `YEAR`                                            | 复制 `GL_DETAIL.csv` 中 `YEARV`的值                                   |
 | `ERRMESSAGEH`                                     | 留空                                                               |
 | `ISDIFFLAG`                                       | 固定 `N`                                                           |
 | `OFFERVOUCHER`                                    | 留空                                                               |
-
-

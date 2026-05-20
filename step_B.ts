@@ -377,22 +377,41 @@ function freeValueIdForIndex(index: number): string {
 }
 
 function freeValueRows(values: string[]): string[][] {
+  const idsByValueName = new Map<
+    string,
+    { checkValue: string; freeValueId: string; pkFreeValue: string }
+  >();
+  let uniqueValueIndex = 0;
+
   return values.map((value, index) => {
     const ordinal = index + 1;
     const valueCode = String(ordinal).padStart(5, "0");
-    const checkValueUuid = String(FREEVALUE_CHECKVALUE_UUID_START + index);
-    const freeValueUuid = freeValueUuidForIndex(index);
+    let ids = idsByValueName.get(value);
+    if (!ids) {
+      const checkValueUuid = String(
+        FREEVALUE_CHECKVALUE_UUID_START + uniqueValueIndex,
+      );
+      const freeValueUuid = freeValueUuidForIndex(uniqueValueIndex);
+      ids = {
+        checkValue: `0001A92JDT${checkValueUuid}U`,
+        freeValueId: `1774A${freeValueUuid}F`,
+        pkFreeValue: `1774A${freeValueUuid}P`,
+      };
+      idsByValueName.set(value, ids);
+      uniqueValueIndex++;
+    }
+
     return [
       "0",
       "1",
       FREEVALUE_CHECKTYPE,
-      `0001A92JDT${checkValueUuid}U`,
+      ids.checkValue,
       "0",
       "",
       "",
       "",
-      `1774A${freeValueUuid}F`,
-      `1774A${freeValueUuid}P`,
+      ids.freeValueId,
+      ids.pkFreeValue,
       FREEVALUE_TS,
       valueCode,
       value,

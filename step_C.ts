@@ -399,12 +399,35 @@ function assIdsByDataRowIndex(
   return map;
 }
 
+function voucherUuidsByDataRowIndex(bRows: string[][]): string[] {
+  const voucherUuids: string[] = [];
+  let currentVoucherUuid = "";
+  let voucherIndex = 0;
+
+  for (let bRowIndex = 1; bRowIndex < bRows.length; bRowIndex++) {
+    const row = bRows[bRowIndex];
+    const detailIndex = (row[row.length - 1] ?? "").trim();
+    if (detailIndex === "1" || !currentVoucherUuid) {
+      currentVoucherUuid = String(DETAIL_PK_VOUCHER_UUID_START + voucherIndex).padStart(
+        9,
+        "0",
+      );
+      voucherIndex++;
+    }
+    voucherUuids.push(currentVoucherUuid);
+  }
+
+  return voucherUuids;
+}
+
 function detailRows(
   bRows: string[][],
   assIds: Map<number, string>,
   subjectPkRow: SubjectPkRow,
   managerIds: Map<string, string>,
 ): string[][] {
+  const voucherUuids = voucherUuidsByDataRowIndex(bRows);
+
   return bRows.slice(1).map((row, index) => {
     const creditAmount = row[COL_CREDIT] ?? "";
     const debitAmount = row[COL_DEBIT] ?? "";
@@ -424,7 +447,7 @@ function detailRows(
       );
     }
     const pkDetailUuid = String(DETAIL_PK_DETAIL_UUID_START + index).padStart(14, "0");
-    const voucherUuid = String(DETAIL_PK_VOUCHER_UUID_START + index);
+    const voucherUuid = voucherUuids[index] ?? "";
 
     return [
       assIds.get(index) ?? "",

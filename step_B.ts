@@ -26,6 +26,7 @@ const COL_PREPARED_BY = 11;
 const COL_AUDITED_BY = 12;
 const COL_POSTED_BY = 13;
 const COL_BUSINESS_DATE = 21;
+const COL_ATTACHMENT = 23;
 
 const FREEVALUE_HEADER = [
   "ASSINDEX",
@@ -312,7 +313,7 @@ function normalizeAmount(value: string): string {
   const amount = Number(normalizedNumberText);
   if (!Number.isFinite(amount)) return withoutTextMarker;
 
-  return Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
+  return amount.toFixed(2);
 }
 
 function cleanAmountColumns(rows: string[][]): void {
@@ -321,6 +322,25 @@ function cleanAmountColumns(rows: string[][]): void {
     for (const col of [COL_ORIGINAL_AMOUNT, COL_DEBIT, COL_CREDIT]) {
       row[col] = normalizeAmount(row[col] ?? "");
     }
+  }
+}
+
+function normalizePlainNumber(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return value;
+
+  const withoutTextMarker = trimmed.startsWith("'") ? trimmed.slice(1) : trimmed;
+  const normalizedNumberText = withoutTextMarker.replace(/,/g, "");
+  const number = Number(normalizedNumberText);
+  if (!Number.isFinite(number)) return withoutTextMarker;
+
+  return String(number);
+}
+
+function cleanAttachmentColumn(rows: string[][]): void {
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    row[COL_ATTACHMENT] = normalizePlainNumber(row[COL_ATTACHMENT] ?? "");
   }
 }
 
@@ -497,6 +517,7 @@ async function processInputFile(
   fillDownColumns(rows, [COL_DATE, COL_PERIOD, COL_VOUCHER_NO, COL_BUSINESS_DATE]);
   fillEntryNumbers(rows);
   cleanAmountColumns(rows);
+  cleanAttachmentColumn(rows);
   
   cleanSubjectNames(rows);
 

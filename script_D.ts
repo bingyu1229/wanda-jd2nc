@@ -275,7 +275,8 @@ function userIdFor(
 }
 
 function amountValue(raw: string): number {
-  const normalized = raw.replace(/,/g, "").trim();
+  const trimmed = raw.replace(/,/g, "").trim();
+  const normalized = trimmed.startsWith("'") ? trimmed.slice(1) : trimmed;
   if (!normalized) return 0;
   const value = Number(normalized);
   if (!Number.isFinite(value)) throw new Error(`Invalid amount: ${raw}`);

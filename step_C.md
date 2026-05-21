@@ -33,7 +33,7 @@ npx tsx test/step_C.ts "test/015.001/b.csv"
 ## 2. 生成 `GL_DETAIL.csv`
 
 `GL_DETAIL.csv` 的数据行数与 `b.csv` 的数据行数保持一致。
-`GL_DETAIL.csv` 会用 `b.csv` 的 E 列 `科目代码` 匹配 `pk.csv` 的 `SUBJCODE`，再取同一行的 `PK_ACCSUBJ` 填充明细表。`PK_CORP`、`PK_GLBOOK`、`PK_GLORG`、`PK_GLORGBOOK` 使用 `pk.csv` 第一条数据行中的固定值；若 `pk.csv` 没有 `PK_GLBOOK` 列，则 `PK_GLBOOK` 固定为 `0001A9100000000JCNSC`。
+`GL_DETAIL.csv` 会用 `b.csv` 的 E 列 `科目代码` 匹配 `pk.csv` 的 `SUBJCODE`，再取同一行的 `PK_ACCSUBJ` 填充明细表；若 `b.csv` 的 `科目代码` 为空，则 `PK_ACCSUBJ` 留空。`PK_CORP`、`PK_GLBOOK`、`PK_GLORG`、`PK_GLORGBOOK` 使用 `pk.csv` 第一条数据行中的固定值；若 `pk.csv` 没有 `PK_GLBOOK` 列，则 `PK_GLBOOK` 固定为 `0001A9100000000JCNSC`。
 `GL_DETAIL.csv` 会用 `b.csv` 的 N 列 `过账` 匹配 `user.csv` 的 `USER_NAME`，再取同一行的 `CUSERID` 填充 `PK_MANAGERV`；若 `过账` 为空，则 `PK_MANAGERV` 留空。
 
 `GL_DETAIL.csv` A 列 `ASSID` 取值规则：
@@ -75,7 +75,7 @@ npx tsx test/step_C.ts "test/015.001/b.csv"
 | `LOCALDEBITAMOUNT`  | 复制 `b.csv` 中 J 列 `借方` 的值                                               |
 | `MODIFYFLAG`        | 固定 `YYYYYYYYYYYYYYYY`                                                  |
 | `OPPOSITESUBJ`      | 留空                                                                     |
-| `PK_ACCSUBJ`        | 按 `b.csv` 科目代码匹配 `pk.csv.SUBJCODE` 后取 `PK_ACCSUBJ`                         |
+| `PK_ACCSUBJ`        | `b.csv` 科目代码为空时留空；否则按 `b.csv` 科目代码匹配 `pk.csv.SUBJCODE` 后取 `PK_ACCSUBJ`       |
 | `PK_CORP`           | 取 `pk.csv` 第一条数据行的 `PK_CORP`                                           |
 | `PK_CURRTYPE`       | 固定 `00010000000000000001`                                              |
 | `PK_DETAIL`         | `1774A9` + 14 位 UUID；UUID 为目录名数字 6 位前缀 + 8 位目录内序号，如 `023.001` 从 `02300100000000` 开始，数字容量用完后继续使用含小写字母的 base36 后缀，最大到 `023001zzzzzzzz` |

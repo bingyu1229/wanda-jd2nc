@@ -500,11 +500,14 @@ function detailRows(
     const debitAmount = row[COL_DEBIT] ?? "";
     const period = parsePeriod(row[COL_PERIOD] ?? "");
     const subjectCode = (row[COL_SUBJECT_CODE] ?? "").trim();
-    const pkAccsubj = subjectPkRow.pkAccsubjByCode.get(subjectCode);
-    if (!pkAccsubj) {
-      throw new Error(
-        `${INPUT_PK_FILE_NAME} has no SUBJCODE match for ${INPUT_B_FILE_NAME} row ${index + 2}: ${subjectCode}`,
-      );
+    let pkAccsubj = "";
+    if (subjectCode) {
+      pkAccsubj = subjectPkRow.pkAccsubjByCode.get(subjectCode) ?? "";
+      if (!pkAccsubj) {
+        throw new Error(
+          `${INPUT_PK_FILE_NAME} has no SUBJCODE match for ${INPUT_B_FILE_NAME} row ${index + 2}: ${subjectCode}`,
+        );
+      }
     }
     const postedBy = (row[COL_POSTED_BY] ?? "").trim();
     const pkManager = postedBy ? managerIds.get(postedBy) : "";

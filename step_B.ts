@@ -521,20 +521,20 @@ function nameSqlLines(names: string[]): string[] {
   ].map((line) => `${line}\n`);
 }
 
-async function writeLines(
+async function writeUtf8Lines(
   outPath: string,
   lines: Iterable<string>,
   utf8Bom: boolean,
 ): Promise<void> {
-  const writeStream = fs.createWriteStream(outPath, { encoding: "utf8" });
+  const writeStream = fs.createWriteStream(outPath);
   const streamDone = new Promise<void>((resolve, reject) => {
     writeStream.on("error", reject);
     writeStream.on("finish", resolve);
   });
 
-  if (utf8Bom) writeStream.write("\uFEFF");
+  if (utf8Bom) writeStream.write(Buffer.from("\uFEFF", "utf8"));
   for (const line of lines) {
-    if (!writeStream.write(line)) await once(writeStream, "drain");
+    if (!writeStream.write(Buffer.from(line, "utf8"))) await once(writeStream, "drain");
   }
   writeStream.end();
   await streamDone;
@@ -589,11 +589,15 @@ async function processInputFile(
     );
   });
 
-  await writeLines(outPath, outputRows.map((row) => csvQuoteAllRow(row)), args.utf8Bom);
+  await writeUtf8Lines(
+    outPath,
+    outputRows.map((row) => csvQuoteAllRow(row)),
+    args.utf8Bom,
+  );
 
   const freeValues = auxiliaryFreeValues(rows);
 
-  await writeLines(
+  await writeUtf8Lines(
     freeValuePath,
     [
       csvRow(FREEVALUE_HEADER),
@@ -603,7 +607,7 @@ async function processInputFile(
   );
 
   const userNames = collectUserNames(rows);
-  await writeLines(nameSqlPath, nameSqlLines(userNames), args.utf8Bom);
+  await writeUtf8Lines(nameSqlPath, nameSqlLines(userNames), args.utf8Bom);
 
   console.error("Wrote", rows.length, "rows to", outPath);
   console.error("Wrote", freeValues.length + 1, "rows to", freeValuePath);

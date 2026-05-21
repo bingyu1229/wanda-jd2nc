@@ -78,7 +78,7 @@ npx tsx test/step_C.ts "test/015.001/b.csv"
 | `PK_ACCSUBJ`        | 按 `b.csv` 科目代码匹配 `pk.csv.SUBJCODE` 后取 `PK_ACCSUBJ`                         |
 | `PK_CORP`           | 取 `pk.csv` 第一条数据行的 `PK_CORP`                                           |
 | `PK_CURRTYPE`       | 固定 `00010000000000000001`                                              |
-| `PK_DETAIL`         | `1774A9` + 14 位 UUID；脚本从 `15020000000001` 开始递增                         |
+| `PK_DETAIL`         | `1774A9` + 14 位 UUID；UUID 为目录名数字 6 位前缀 + 8 位目录内序号，如 `023.001` 从 `02300100000000` 开始，数字容量用完后继续使用含小写字母的 base36 后缀，最大到 `023001zzzzzzzz` |
 | `PK_GLBOOK`         | 取 `pk.csv` 第一条数据行的 `PK_GLBOOK`；若无该列，则固定为 `0001A9100000000JCNSC`          |
 | `PK_GLORG`          | 取 `pk.csv` 第一条数据行的 `PK_GLORG`                                           |
 | `PK_GLORGBOOK`      | 取 `pk.csv` 第一条数据行的 `PK_GLORGBOOK`                                       |
@@ -86,7 +86,7 @@ npx tsx test/step_C.ts "test/015.001/b.csv"
 | `PK_INNERSOB`       | 留空                                                                     |
 | `PK_SOB`            | 留空                                                                     |
 | `PK_SOURCEPK`       | 留空                                                                     |
-| `PK_VOUCHER`        | `0001DEFAULT` + 9 位 UUID；按 `DETAILINDEX` 分组，`DETAILINDEX=1` 时从 `150000001` 开始递增生成新 UUID，后续 `DETAILINDEX=2,3,4...` 沿用上一条 `DETAILINDEX=1` 的 UUID |
+| `PK_VOUCHER`        | `0001DEFAULT` + 9 位 UUID；UUID 为目录名数字 6 位前缀 + 3 位目录内序号，如 `023.001` 从 `023001000` 开始，数字容量用完后继续使用含小写字母的 base36 后缀，最大到 `023001zzz`；按 `DETAILINDEX` 分组，`DETAILINDEX=1` 时生成新 UUID，后续 `DETAILINDEX=2,3,4...` 沿用上一条 `DETAILINDEX=1` 的 UUID |
 | `PRICE`             | 固定 `0`                                                                 |
 | `RECIEPTCLASS`      | 留空                                                                     |
 | `TS`                | 固定 `2026-03-11 9:00:00`                                                |

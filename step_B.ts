@@ -48,6 +48,7 @@ const FREEVALUE_CHECKTYPE = "0001A9100000000JCKUS";
 const FREEVALUE_TS = "2026/3/5 16:26";
 const FREEVALUE_CHECKVALUE_UUID_WIDTH = 9;
 const FREEVALUE_ID_UUID_WIDTH = 14;
+const UUID_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz";
 const USER_CODE_SUFFIX = "(jindie)";
 
 const NAME_PINYIN_OVERRIDES = new Map<string, string>([
@@ -371,15 +372,54 @@ function folderUuidSeed(folderPath: string): string {
   return seed;
 }
 
+function countNumericOnlyBase36ValuesAtOrBelow(value: number, width: number): number {
+  const base36 = value.toString(36).padStart(width, "0");
+  let count = 0;
+
+  for (let pos = 0; pos < width; pos++) {
+    const digit = UUID_ALPHABET.indexOf(base36[pos] ?? "0");
+    const lowerNumericDigits = Math.min(digit, 10);
+    count += lowerNumericDigits * 10 ** (width - pos - 1);
+
+    if (digit >= 10) return count;
+  }
+
+  return count + 1;
+}
+
+function letterExpandedSequence(index: number, width: number): string {
+  const decimalCapacity = 10 ** width;
+  if (index < decimalCapacity) return String(index).padStart(width, "0");
+
+  const letterCapacity = 36 ** width - decimalCapacity;
+  const targetValidCount = index - decimalCapacity + 1;
+  if (targetValidCount > letterCapacity) {
+    throw new Error(`Per-folder UUID sequence exceeds ${width} character capacity`);
+  }
+
+  let low = 0;
+  let high = 36 ** width - 1;
+
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    const validCount =
+      mid + 1 - countNumericOnlyBase36ValuesAtOrBelow(mid, width);
+    if (validCount >= targetValidCount) high = mid;
+    else low = mid + 1;
+  }
+
+  return low.toString(36).padStart(width, "0");
+}
+
 function freeValueUuidBody(folderSeed: string, index: number, width: number): string {
-  const minSequenceWidth = width - folderSeed.length;
-  if (minSequenceWidth < 1) {
+  const sequenceWidth = width - folderSeed.length;
+  if (sequenceWidth < 1) {
     throw new Error(
       `Folder UUID seed ${folderSeed} leaves no room for a ${width}-digit per-folder sequence`,
     );
   }
 
-  const sequence = String(index).padStart(minSequenceWidth, "0");
+  const sequence = letterExpandedSequence(index, sequenceWidth);
   return `${folderSeed}${sequence}`;
 }
 

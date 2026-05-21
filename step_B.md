@@ -101,7 +101,7 @@ npx tsx test/step_B.ts "test/015.001/会计分类序时簿.htm"
   - 辅助核算值：`部门:ZJB - 总经办/职员:HMC - 何明春`
 3. 如果 `科目名称` 不包含 `space-space`，则不写入 `GL_FREEVALUE.csv`。
 4. 需要按 `VALUENAME` 去重；如果同一个辅助核算值出现多次，只保留第一次出现时生成的 `GL_FREEVALUE.csv` 记录，后续重复值不再写入。
-5. `CHECKVALUE`、`FREEVALUEID`、`PK_FREEVALUE` 的 UUID 使用输入文件所在目录名中的数字作为前缀，再追加目录内序号；例如目录名 `023.001` 取 `023001`。`CHECKVALUE` 生成 `023001000`、`023001001`；`FREEVALUEID` 和 `PK_FREEVALUE` 生成 `02300100000000`、`02300100000001`，避免不同目录重复。
+5. `CHECKVALUE`、`FREEVALUEID`、`PK_FREEVALUE` 的 UUID 使用输入文件所在目录名中的数字作为前缀，再追加目录内序号；例如目录名 `023.001` 取 `023001`。序号先使用纯数字，超过数字容量后改用含小写字母的 base36 后缀，例如 `CHECKVALUE` 到 `023001999` 后继续生成 `02300100a`、`02300100b`，最大到 `023001zzz`；`FREEVALUEID` 和 `PK_FREEVALUE` 同理使用更长后缀，避免不同目录重复。
 
 输出表头固定为：
 
@@ -117,10 +117,10 @@ ASSINDEX,CHECKCOUNT,CHECKTYPE,CHECKVALUE,DR,FREE1,FREE2,FREE3,FREEVALUEID,PK_FRE
 | `ASSINDEX`                  | 固定 `0`                                                 |
 | `CHECKCOUNT`                | 固定 `1`                                                 |
 | `CHECKTYPE`                 | 固定 `0001A9100000000JCKUS`                              |
-| `CHECKVALUE`                | `0001A92JDT` + UUID + `U`；UUID 为目录名数字 + 目录内序号，如 `023.001` 从 `023001000` 开始 |
+| `CHECKVALUE`                | `0001A92JDT` + UUID + `U`；UUID 为目录名数字 + 3 位目录内序号，如 `023.001` 从 `023001000` 开始，到 `023001999` 后继续 `02300100a`、`02300100b` ... `023001zzz` |
 | `DR`                        | 固定 `0`                                                 |
 | `FREE1` / `FREE2` / `FREE3` | 留空                                                     |
-| `FREEVALUEID`               | `1774A` + 14 位 UUID + `F`；UUID 为目录名数字 + 目录内序号，如 `023.001` 从 `02300100000000` 开始 |
+| `FREEVALUEID`               | `1774A` + 14 位 UUID + `F`；UUID 为目录名数字 + 8 位目录内序号，如 `023.001` 从 `02300100000000` 开始，数字容量用完后继续使用含小写字母的 base36 后缀 |
 | `PK_FREEVALUE`              | `1774A` + 14 位 UUID + `P`；UUID 与 `FREEVALUEID` 相同                 |
 | `TS`                        | 固定 `2026/3/5 16:26`                                    |
 | `VALUECODE`                 | 五位行序号，从 `00001` 开始，按去重后的输出行递增                      |

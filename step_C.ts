@@ -88,8 +88,10 @@ const DETAIL_HEADER = [
   "PK_OTHERORGBOOK",
 ];
 
-const DETAIL_PK_DETAIL_UUID_START = 15020000000001;
-const DETAIL_PK_VOUCHER_UUID_START = 150000001;
+const DETAIL_PK_DETAIL_UUID_WIDTH = 14;
+const DETAIL_PK_VOUCHER_UUID_WIDTH = 9;
+const DETAIL_FOLDER_PREFIX_WIDTH = 6;
+const UUID_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz";
 const DETAIL_TS = "2026-03-11 9:00:00";
 const DETAIL_PK_GLBOOK = "0001A9100000000JCNSC";
 const DETAIL_PK_CURRTYPE = "00010000000000000001";
@@ -284,6 +286,68 @@ function isZeroAmount(value: string): boolean {
   return Number.isFinite(amount) && amount === 0;
 }
 
+function folderUuidSeed(folderPath: string): string {
+  const seed = path.basename(folderPath).replace(/\D/g, "");
+  if (!seed) {
+    throw new Error(`Cannot build GL_DETAIL UUID seed from folder name: ${folderPath}`);
+  }
+  if (seed.length > DETAIL_FOLDER_PREFIX_WIDTH) {
+    throw new Error(
+      `Folder UUID seed ${seed} is longer than ${DETAIL_FOLDER_PREFIX_WIDTH} digits: ${folderPath}`,
+    );
+  }
+  return seed.padStart(DETAIL_FOLDER_PREFIX_WIDTH, "0");
+}
+
+function countNumericOnlyBase36ValuesAtOrBelow(value: number, width: number): number {
+  const base36 = value.toString(36).padStart(width, "0");
+  let count = 0;
+
+  for (let pos = 0; pos < width; pos++) {
+    const digit = UUID_ALPHABET.indexOf(base36[pos] ?? "0");
+    const lowerNumericDigits = Math.min(digit, 10);
+    count += lowerNumericDigits * 10 ** (width - pos - 1);
+
+    if (digit >= 10) return count;
+  }
+
+  return count + 1;
+}
+
+function letterExpandedSequence(index: number, width: number): string {
+  const decimalCapacity = 10 ** width;
+  if (index < decimalCapacity) return String(index).padStart(width, "0");
+
+  const letterCapacity = 36 ** width - decimalCapacity;
+  const targetValidCount = index - decimalCapacity + 1;
+  if (targetValidCount > letterCapacity) {
+    throw new Error(`Per-folder UUID sequence exceeds ${width} character capacity`);
+  }
+
+  let low = 0;
+  let high = 36 ** width - 1;
+
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    const validCount =
+      mid + 1 - countNumericOnlyBase36ValuesAtOrBelow(mid, width);
+    if (validCount >= targetValidCount) high = mid;
+    else low = mid + 1;
+  }
+
+  return low.toString(36).padStart(width, "0");
+}
+
+function folderUuidBody(folderSeed: string, index: number, width: number): string {
+  const sequenceWidth = width - folderSeed.length;
+  if (sequenceWidth < 1) {
+    throw new Error(
+      `Folder UUID seed ${folderSeed} leaves no room for a ${width}-character per-folder sequence`,
+    );
+  }
+  return `${folderSeed}${letterExpandedSequence(index, sequenceWidth)}`;
+}
+
 function freeValueIdColumnIndex(freeValueHeader: string[]): number {
   const index = freeValueHeader.indexOf("FREEVALUEID");
   if (index < 0) throw new Error(`${INPUT_FREEVALUE_FILE_NAME} is missing FREEVALUEID`);
@@ -399,7 +463,7 @@ function assIdsByDataRowIndex(
   return map;
 }
 
-function voucherUuidsByDataRowIndex(bRows: string[][]): string[] {
+function voucherUuidsByDataRowIndex(bRows: string[][], folderSeed: string): string[] {
   const voucherUuids: string[] = [];
   let currentVoucherUuid = "";
   let voucherIndex = 0;
@@ -408,9 +472,10 @@ function voucherUuidsByDataRowIndex(bRows: string[][]): string[] {
     const row = bRows[bRowIndex];
     const detailIndex = (row[row.length - 1] ?? "").trim();
     if (detailIndex === "1" || !currentVoucherUuid) {
-      currentVoucherUuid = String(DETAIL_PK_VOUCHER_UUID_START + voucherIndex).padStart(
-        9,
-        "0",
+      currentVoucherUuid = folderUuidBody(
+        folderSeed,
+        voucherIndex,
+        DETAIL_PK_VOUCHER_UUID_WIDTH,
       );
       voucherIndex++;
     }
@@ -425,8 +490,10 @@ function detailRows(
   assIds: Map<number, string>,
   subjectPkRow: SubjectPkRow,
   managerIds: Map<string, string>,
+  folderPath: string,
 ): string[][] {
-  const voucherUuids = voucherUuidsByDataRowIndex(bRows);
+  const uuidSeed = folderUuidSeed(folderPath);
+  const voucherUuids = voucherUuidsByDataRowIndex(bRows, uuidSeed);
 
   return bRows.slice(1).map((row, index) => {
     const creditAmount = row[COL_CREDIT] ?? "";
@@ -446,7 +513,11 @@ function detailRows(
         `${INPUT_USER_FILE_NAME} has no USER_NAME match for ${INPUT_B_FILE_NAME} row ${index + 2}: ${postedBy}`,
       );
     }
-    const pkDetailUuid = String(DETAIL_PK_DETAIL_UUID_START + index).padStart(14, "0");
+    const pkDetailUuid = folderUuidBody(
+      uuidSeed,
+      index,
+      DETAIL_PK_DETAIL_UUID_WIDTH,
+    );
     const voucherUuid = voucherUuids[index] ?? "";
 
     return [
@@ -557,7 +628,7 @@ async function processFolder(folderPath: string, utf8Bom: boolean): Promise<numb
   const assIds = assIdsByDataRowIndex(bRows, freeValueRows);
   const subjectPkRow = subjectPkRowFromCsv(pkRows);
   const managerIds = managerIdsByUserName(userRows);
-  const details = detailRows(bRows, assIds, subjectPkRow, managerIds);
+  const details = detailRows(bRows, assIds, subjectPkRow, managerIds, folderPath);
   await writeLines(
     detailPath,
     [csvRow(DETAIL_HEADER), ...details.map((row) => csvRow(row))],

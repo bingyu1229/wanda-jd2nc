@@ -282,8 +282,13 @@ function formatVoucherDate(date: string): string {
 }
 
 function isZeroAmount(value: string): boolean {
-  const amount = Number(value.replace(/,/g, "").trim() || "0");
+  const amount = Number(normalizeNumberText(value) || "0");
   return Number.isFinite(amount) && amount === 0;
+}
+
+function normalizeNumberText(value: string): string {
+  const normalized = value.replace(/,/g, "").trim();
+  return normalized.startsWith("'") ? normalized.slice(1) : normalized;
 }
 
 function folderUuidSeed(folderPath: string): string {
@@ -496,8 +501,8 @@ function detailRows(
   const voucherUuids = voucherUuidsByDataRowIndex(bRows, uuidSeed);
 
   return bRows.slice(1).map((row, index) => {
-    const creditAmount = row[COL_CREDIT] ?? "";
-    const debitAmount = row[COL_DEBIT] ?? "";
+    const creditAmount = normalizeNumberText(row[COL_CREDIT] ?? "");
+    const debitAmount = normalizeNumberText(row[COL_DEBIT] ?? "");
     const period = parsePeriod(row[COL_PERIOD] ?? "");
     const subjectCode = (row[COL_SUBJECT_CODE] ?? "").trim();
     let pkAccsubj = "";
